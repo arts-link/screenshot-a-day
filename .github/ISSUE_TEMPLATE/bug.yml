@@ -1,0 +1,22 @@
+name: Bug report
+description: Report reproducible incorrect behavior without secrets or private screenshots
+body:
+  - type: input
+    id: version
+    attributes: { label: Version, placeholder: 0.1.0 }
+    validations: { required: true }
+  - type: textarea
+    id: description
+    attributes: { label: What happened? }
+    validations: { required: true }
+  - type: textarea
+    id: reproduction
+    attributes: { label: Reproduction }
+    validations: { required: true }
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: I removed credentials, private URLs, cookies, headers, and sensitive screenshots.
+          required: true
