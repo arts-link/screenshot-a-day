@@ -1,0 +1,46 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @sad/worker exec playwright install --with-deps chromium firefox webkit
+      - run: pnpm check
+      - run: pnpm build
+      - run: pnpm audit --prod --audit-level high
+      - run: docker compose config --quiet
+        env:
+          SAD_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+          SAD_SESSION_SECRET: 11111111111111111111111111111111
+          SAD_WORKER_TOKEN: 22222222222222222222222222222222
+  container-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up --build --detach
+        env:
+          SAD_ENCRYPTION_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+          SAD_SESSION_SECRET: 11111111111111111111111111111111
+          SAD_WORKER_TOKEN: 22222222222222222222222222222222
+      - name: Wait for readiness
+        run: |
+          for attempt in {1..30}; do
+            curl --fail --silent http://localhost:4400/health/ready && exit 0
+            sleep 2
+          done
+          docker compose logs
+          exit 1
+      - if: always()
+        run: docker compose down --volumes
