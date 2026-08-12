@@ -1,0 +1,61 @@
+name: screenshot-a-day
+
+services:
+  api:
+    image: ghcr.io/arts-link/screenshot-a-day-api:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        SAD_VERSION: 0.1.0
+    restart: unless-stopped
+    init: true
+    ports:
+      - "4400:4400"
+    environment:
+      SAD_DATA_DIR: /data
+      SAD_PUBLIC_URL: ${SAD_PUBLIC_URL:-http://localhost:4400}
+      SAD_ENCRYPTION_KEY: ${SAD_ENCRYPTION_KEY:?Set SAD_ENCRYPTION_KEY}
+      SAD_SESSION_SECRET: ${SAD_SESSION_SECRET:?Set SAD_SESSION_SECRET}
+      SAD_WORKER_TOKEN: ${SAD_WORKER_TOKEN:?Set SAD_WORKER_TOKEN}
+      SAD_PRIVATE_TARGET_ALLOWLIST: ${SAD_PRIVATE_TARGET_ALLOWLIST:-}
+      SAD_TRUST_PROXY: ${SAD_TRUST_PROXY:-false}
+      SAD_LOG_LEVEL: ${SAD_LOG_LEVEL:-info}
+    volumes:
+      - sad-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:4400/health/ready').then(r=>{if(!r.ok)process.exit(1)})",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    image: ghcr.io/arts-link/screenshot-a-day-worker:0.1.0
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+      args:
+        SAD_VERSION: 0.1.0
+    restart: unless-stopped
+    init: true
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SAD_API_URL: http://api:4400
+      SAD_WORKER_TOKEN: ${SAD_WORKER_TOKEN:?Set SAD_WORKER_TOKEN}
+      SAD_WORKER_CONCURRENCY: ${SAD_WORKER_CONCURRENCY:-1}
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  sad-data:

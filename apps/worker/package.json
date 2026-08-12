@@ -1,0 +1,20 @@
+{
+  "name": "@sad/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sad/contracts": "workspace:*",
+    "@sad/core": "workspace:*",
+    "playwright": "^1.62.0",
+    "sharp": "^0.35.3",
+    "zod": "^4.1.12"
+  }
+}
