@@ -1,0 +1,100 @@
+import argon2 from "argon2";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { hashToken, randomToken, safeTokenEqual } from "@sad/core";
+import type { AppDatabase } from "./database.js";
+
+export const SESSION_COOKIE = "sad_session";
+export type ApiScope = "read" | "capture:trigger" | "manage";
+
+export interface Identity {
+  kind: "session" | "token";
+  userId?: string;
+  scopes: ApiScope[];
+  projectIds: string[] | null;
+}
+
+export class SetupManager {
+  private tokenHash: string | null = null;
+  private expiresAt = 0;
+
+  issue(): string {
+    const token = randomToken(32);
+    this.tokenHash = hashToken(token);
+    this.expiresAt = Date.now() + 15 * 60_000;
+    return token;
+  }
+
+  consume(token: string): boolean {
+    if (!this.tokenHash || Date.now() > this.expiresAt || !safeTokenEqual(token, this.tokenHash))
+      return false;
+    this.tokenHash = null;
+    return true;
+  }
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  return argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: 19_456,
+    timeCost: 2,
+    parallelism: 1,
+  });
+}
+
+export async function verifyPassword(hash: string, password: string): Promise<boolean> {
+  try {
+    return await argon2.verify(hash, password);
+  } catch {
+    return false;
+  }
+}
+
+export function createSession(db: AppDatabase, userId: string): { token: string; expiresAt: Date } {
+  const token = randomToken(32);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60_000);
+  db.createSession(userId, hashToken(token), expiresAt);
+  return { token, expiresAt };
+}
+
+export function authenticate(db: AppDatabase, request: FastifyRequest): Identity | null {
+  const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (bearer) {
+    const token = db.getApiToken(hashToken(bearer));
+    if (!token) return null;
+    return {
+      kind: "token",
+      scopes: JSON.parse(token.scopes_json) as ApiScope[],
+      projectIds: token.project_ids_json ? (JSON.parse(token.project_ids_json) as string[]) : null,
+    };
+  }
+  const sessionToken = request.cookies[SESSION_COOKIE];
+  if (!sessionToken) return null;
+  const session = db.getSession(hashToken(sessionToken));
+  return session
+    ? {
+        kind: "session",
+        userId: session.user_id,
+        scopes: ["read", "capture:trigger", "manage"],
+        projectIds: null,
+      }
+    : null;
+}
+
+export function requireIdentity(
+  db: AppDatabase,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  scope: ApiScope,
+  projectId?: string,
+): Identity | null {
+  const identity = authenticate(db, request);
+  if (
+    !identity ||
+    !identity.scopes.includes(scope) ||
+    (projectId && identity.projectIds && !identity.projectIds.includes(projectId))
+  ) {
+    void reply.code(401).send({ error: "Authentication with the required scope is needed" });
+    return null;
+  }
+  return identity;
+}

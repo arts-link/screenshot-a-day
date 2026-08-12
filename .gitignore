@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 dist/
 coverage/
 .vite/
@@ -10,5 +11,5 @@ data/
 playwright-report/
 test-results/
 *.log
+*.tsbuildinfo
 .DS_Store
-

@@ -1,0 +1,39 @@
+{
+  "name": "screenshot-a-day",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted visual history for websites",
+  "license": "AGPL-3.0-or-later",
+  "packageManager": "pnpm@11.16.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm version:check",
+    "dev": "pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm --parallel --filter @sad/api --filter @sad/web --filter @sad/worker dev",
+    "docs:check": "node scripts/check-docs.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "pnpm -r typecheck",
+    "version:check": "node scripts/check-version.mjs",
+    "changeset": "changeset",
+    "version-packages": "changeset version"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "@eslint/js": "^9.38.0",
+    "@types/node": "^24.10.0",
+    "eslint": "^9.38.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.2",
+    "vitest": "^4.0.6"
+  }
+}
