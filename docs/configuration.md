@@ -20,6 +20,10 @@ The API refuses to start without three independent secrets. Put them in `.env` f
 
 Changing the encryption key makes existing encrypted target credentials and webhook secrets unreadable. Rotating it therefore requires a migration tool that is not included in v0.1.0.
 
+## Schedules
+
+New projects use an inactive daily schedule (`0 0 * * *`) in UTC. The UI provides daily, six-hourly, and weekly presets plus direct cron editing. Cron expressions are evaluated in the project's IANA timezone. Scheduling normally requires a successful test capture for every enabled profile; bypassing that guard requires a separate explicit confirmation.
+
 ## Private targets
 
 Private, loopback, link-local, reserved, and cloud-metadata addresses are denied by default. To capture an intentional internal host, prefer an exact hostname:

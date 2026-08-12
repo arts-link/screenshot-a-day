@@ -222,6 +222,21 @@ describe("control plane", () => {
       settings: { extent: "fullPage", colorScheme: "dark", deviceScaleFactor: 2 },
     });
 
+    const guardedSchedule = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}`,
+      headers: { cookie },
+      payload: { scheduleEnabled: true },
+    });
+    expect(guardedSchedule.statusCode).toBe(409);
+    const confirmedSchedule = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}`,
+      headers: { cookie },
+      payload: { scheduleEnabled: true, confirmUntestedProfiles: true },
+    });
+    expect(confirmedSchedule.statusCode).toBe(200);
+
     await app.inject({
       method: "POST",
       url: `/api/v1/projects/${project.id}/runs`,

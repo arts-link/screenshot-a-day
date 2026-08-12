@@ -298,6 +298,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         scheduleExpression: z.string().min(1).max(120).optional(),
         scheduleTimezone: z.string().min(1).max(80).optional(),
         scheduleEnabled: z.boolean().optional(),
+        confirmUntestedProfiles: z.boolean().default(false),
         retentionDays: z.number().int().positive().nullable().optional(),
         retentionCount: z.number().int().positive().nullable().optional(),
       })
@@ -308,7 +309,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     const expression = input.scheduleExpression ?? current.schedule_expression;
     const timezone = input.scheduleTimezone ?? current.schedule_timezone;
     const nextRunAt = nextSchedule(expression, timezone).toISOString();
-    if (input.scheduleEnabled) {
+    if (input.scheduleEnabled && !input.confirmUntestedProfiles) {
       const untested = db
         .listProfiles(current.id)
         .filter((profile) => profile.enabled && !profile.test_succeeded_at);
@@ -584,12 +585,31 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
             .regex(/^#[0-9a-fA-F]{6}$/)
             .default("#111827"),
           frameLimit: z.number().int().min(2).max(500).default(90),
+          captureIds: z.array(z.string()).min(2).max(500).optional(),
+          from: z.iso.datetime().optional(),
+          to: z.iso.datetime().optional(),
         })
         .parse(request.body);
+      if (input.from && input.to && input.from > input.to)
+        return reply.code(400).send({ error: "Export range start must precede its end" });
+      const requestedIds = input.captureIds ? new Set(input.captureIds) : null;
       const captures = db
-        .listCaptures(request.params.id, request.params.profileId, input.frameLimit)
-        .filter((capture) => capture.status === "succeeded" && capture.image_key)
+        .listCaptures(
+          request.params.id,
+          request.params.profileId,
+          requestedIds || input.from || input.to ? 500 : input.frameLimit,
+        )
+        .filter(
+          (capture) =>
+            capture.status === "succeeded" &&
+            capture.image_key &&
+            (!requestedIds || requestedIds.has(capture.id)) &&
+            (!input.from || capture.captured_at >= input.from) &&
+            (!input.to || capture.captured_at <= input.to),
+        )
         .reverse();
+      if (requestedIds && captures.length !== requestedIds.size)
+        return reply.code(400).send({ error: "Every selected capture must belong to the profile" });
       if (captures.length < 2)
         return reply.code(400).send({ error: "At least two successful captures are required" });
       const jobId = db.enqueueExport(request.params.id, request.params.profileId, input.format, {
