@@ -787,6 +787,7 @@ function ProjectControls({
 }) {
   const [error, setError] = useState<unknown>();
   const [notice, setNotice] = useState<string>();
+  const [scheduleExpression, setScheduleExpression] = useState(project.scheduleExpression);
   const hooks = useQuery({
     queryKey: ["webhooks", project.id],
     queryFn: () => api.webhooks(project.id),
@@ -796,9 +797,10 @@ function ProjectControls({
     const data = new FormData(event.currentTarget);
     try {
       await api.updateProject(project.id, {
-        scheduleExpression: String(data.get("scheduleExpression")),
+        scheduleExpression,
         scheduleTimezone: String(data.get("scheduleTimezone")),
         scheduleEnabled: data.get("scheduleEnabled") === "on",
+        confirmUntestedProfiles: data.get("confirmUntestedProfiles") === "on",
         retentionDays: data.get("retentionDays") ? Number(data.get("retentionDays")) : null,
         retentionCount: data.get("retentionCount") ? Number(data.get("retentionCount")) : null,
       });
@@ -880,8 +882,29 @@ function ProjectControls({
       <div className="control-columns">
         <form onSubmit={save}>
           <h3>Capture policy</h3>
+          <Field label="Schedule preset">
+            <select
+              value={
+                ["0 0 * * *", "0 */6 * * *", "0 9 * * 1", "custom"].includes(scheduleExpression)
+                  ? scheduleExpression
+                  : "custom"
+              }
+              onChange={(event) => {
+                if (event.target.value !== "custom") setScheduleExpression(event.target.value);
+              }}
+            >
+              <option value="0 0 * * *">Daily at midnight</option>
+              <option value="0 */6 * * *">Every six hours</option>
+              <option value="0 9 * * 1">Weekly on Monday</option>
+              <option value="custom">Custom cron</option>
+            </select>
+          </Field>
           <Field label="Cron expression">
-            <input name="scheduleExpression" defaultValue={project.scheduleExpression} />
+            <input
+              name="scheduleExpression"
+              value={scheduleExpression}
+              onChange={(event) => setScheduleExpression(event.target.value)}
+            />
           </Field>
           <Field label="Timezone">
             <input name="scheduleTimezone" defaultValue={project.scheduleTimezone} />
@@ -911,6 +934,10 @@ function ProjectControls({
               defaultChecked={project.scheduleEnabled}
             />
             Enable schedule after every profile has succeeded
+          </label>
+          <label className="check-line">
+            <input name="confirmUntestedProfiles" type="checkbox" />
+            Explicitly allow scheduling untested profiles
           </label>
           <Button type="submit">Save policy</Button>
         </form>
