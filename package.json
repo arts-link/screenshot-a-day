@@ -18,7 +18,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm -r typecheck",
     "version:check": "node scripts/check-version.mjs",
     "changeset": "changeset",
     "version-packages": "changeset version"
