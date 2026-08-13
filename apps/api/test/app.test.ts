@@ -139,6 +139,13 @@ describe("control plane", () => {
       payload: {},
     });
     expect(duplicate.json()).toEqual(trigger.json());
+    const runs = await app.inject({
+      url: `/api/v1/projects/${project.id}/runs`,
+      headers: { cookie },
+    });
+    expect(runs.json()).toMatchObject([
+      { id: trigger.json<{ runId: string }>().runId, status: "queued", capture_job_count: 1 },
+    ]);
 
     let job!: { id: string; leaseToken: string; headers: Record<string, string> };
     for (let attempt = 1; attempt <= 3; attempt++) {

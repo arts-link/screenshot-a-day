@@ -153,15 +153,23 @@ button {
   transition: 0.18s ease;
 }
 .button:disabled {
-  opacity: 0.5;
-  cursor: wait;
+  opacity: 0.72;
+  cursor: progress;
+  transform: none;
+}
+.button:focus-visible {
+  outline: 3px solid #dbff5355;
+  outline-offset: 3px;
+}
+.button:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
 }
 .button-primary {
   color: #11140b;
   background: #dbff53;
   box-shadow: 0 8px 26px #dbff531e;
 }
-.button-primary:hover {
+.button-primary:not(:disabled):hover {
   background: #e6ff85;
   transform: translateY(-1px);
 }
@@ -484,6 +492,30 @@ legend {
 .project-header a:not(.back-link) {
   color: #8090a6;
   font-size: 13px;
+}
+.capture-action {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  min-width: 215px;
+}
+.capture-action .button {
+  min-width: 180px;
+}
+.capture-action-status {
+  min-height: 16px;
+  max-width: 280px;
+  color: #7f8ca0;
+  font-size: 11px;
+  text-align: right;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .metric-row {
   display: grid;

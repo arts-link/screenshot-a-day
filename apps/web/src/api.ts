@@ -4,6 +4,7 @@ import type {
   ProjectSummary,
   VersionInfo,
 } from "@sad/contracts";
+import type { CaptureRun } from "./capture-action";
 
 export interface Profile {
   id: string;
@@ -60,9 +61,13 @@ export const api = {
   createProject: (input: unknown) =>
     request<ProjectDetail>("/api/v1/projects", { method: "POST", body: JSON.stringify(input) }),
   captures: (id: string) => request<CaptureRecord[]>(`/api/v1/projects/${id}/captures?limit=200`),
-  runs: (id: string) => request<Array<Record<string, unknown>>>(`/api/v1/projects/${id}/runs`),
-  trigger: (id: string) =>
-    request<{ runId: string }>(`/api/v1/projects/${id}/runs`, { method: "POST", body: "{}" }),
+  runs: (id: string) => request<CaptureRun[]>(`/api/v1/projects/${id}/runs`),
+  trigger: (id: string, idempotencyKey: string) =>
+    request<{ runId: string }>(`/api/v1/projects/${id}/runs`, {
+      method: "POST",
+      body: "{}",
+      headers: { "idempotency-key": idempotencyKey },
+    }),
   publication: (id: string, publishMode: string, rotate = false) =>
     request<{ publishMode: string; shareToken: string | null }>(
       `/api/v1/projects/${id}/publication`,

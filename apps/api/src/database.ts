@@ -670,6 +670,7 @@ export class AppDatabase {
     return this.raw
       .prepare(
         `SELECT r.*, count(j.id) job_count,
+      sum(CASE WHEN j.type='capture' THEN 1 ELSE 0 END) capture_job_count,
       sum(CASE WHEN j.status='succeeded' THEN 1 ELSE 0 END) succeeded_count,
       sum(CASE WHEN j.status='failed' THEN 1 ELSE 0 END) failed_count
       FROM runs r LEFT JOIN jobs j ON j.run_id=r.id WHERE r.project_id=? GROUP BY r.id ORDER BY r.created_at DESC LIMIT ?`,
