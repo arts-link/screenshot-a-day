@@ -9,13 +9,14 @@ import {
   Film,
   Globe2,
   KeyRound,
+  LoaderCircle,
   LogOut,
   Plus,
   ScanEye,
   Settings2,
   ShieldCheck,
 } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Link,
   Navigate,
@@ -28,6 +29,7 @@ import {
 } from "react-router-dom";
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
 import { api, type Comparison } from "./api";
+import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
 import { Button, Card, Empty, ErrorNotice, Field, Status } from "./components";
 
 function Shell() {
@@ -382,14 +384,59 @@ function ProjectPage() {
     queryFn: () => api.captures(id),
     refetchInterval: 5000,
   });
+  const runs = useQuery({
+    queryKey: ["runs", id],
+    queryFn: () => api.runs(id),
+    refetchInterval: 1500,
+  });
   const [selected, setSelected] = useState<string[]>([]);
   const [compare, setCompare] = useState<Comparison>();
   const [error, setError] = useState<unknown>();
+  const [requestedRunId, setRequestedRunId] = useState<string>();
+  const captureLock = useRef(false);
   const trigger = useMutation({
-    mutationFn: () => api.trigger(id),
-    onSuccess: () => client.invalidateQueries({ queryKey: ["captures", id] }),
-    onError: setError,
+    mutationFn: (idempotencyKey: string) => api.trigger(id, idempotencyKey),
+    onSuccess: async ({ runId }) => {
+      setRequestedRunId(runId);
+      await runs.refetch();
+    },
+    onError: (caught) => {
+      captureLock.current = false;
+      setError(caught);
+    },
   });
+  const requestedRun = runs.data?.find((run) => run.id === requestedRunId);
+  const currentRun = requestedRun ?? activeCaptureRun(runs.data);
+  const awaitingQueuedRun = Boolean(requestedRunId && !requestedRun);
+  const captureBusy =
+    trigger.isPending ||
+    awaitingQueuedRun ||
+    currentRun?.status === "queued" ||
+    currentRun?.status === "running";
+  const captureAcknowledging = Boolean(
+    requestedRun && requestedRun.status !== "queued" && requestedRun.status !== "running",
+  );
+  const captureLabel = captureActionLabel(trigger.isPending || awaitingQueuedRun, currentRun);
+  const captureDetail = captureActionDetail(trigger.isPending || awaitingQueuedRun, currentRun);
+
+  useEffect(() => {
+    if (!requestedRun || requestedRun.status === "queued" || requestedRun.status === "running")
+      return;
+    void client.invalidateQueries({ queryKey: ["captures", id] });
+    void client.invalidateQueries({ queryKey: ["project", id] });
+    const reset = window.setTimeout(() => {
+      captureLock.current = false;
+      setRequestedRunId(undefined);
+    }, 4000);
+    return () => window.clearTimeout(reset);
+  }, [client, id, requestedRun]);
+
+  const requestCapture = () => {
+    if (captureLock.current || captureBusy) return;
+    captureLock.current = true;
+    setError(undefined);
+    trigger.mutate(crypto.randomUUID());
+  };
   const grouped = useMemo(
     () =>
       project.data?.profiles.map((profile) => ({
@@ -420,12 +467,21 @@ function ProjectPage() {
             {p.url}
           </a>
         </div>
-        <Button onClick={() => trigger.mutate()} disabled={trigger.isPending}>
-          <Aperture size={18} />
-          {trigger.isPending ? "Queuing…" : "Capture now"}
-        </Button>
+        <div className="capture-action">
+          <Button
+            onClick={requestCapture}
+            disabled={captureBusy || captureAcknowledging || runs.isLoading}
+            aria-busy={captureBusy}
+          >
+            {captureBusy ? <LoaderCircle className="spin" size={18} /> : <Aperture size={18} />}
+            {runs.isLoading ? "Checking queue…" : captureLabel}
+          </Button>
+          <span className="capture-action-status" role="status" aria-live="polite">
+            {captureDetail ?? "Queues one batch across every enabled profile."}
+          </span>
+        </div>
       </header>
-      <ErrorNotice error={error ?? captures.error} />
+      <ErrorNotice error={error ?? captures.error ?? runs.error} />
       <div className="metric-row">
         <Card>
           <span>Profiles</span>
