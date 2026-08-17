@@ -2,7 +2,7 @@
 
 All notable changes to Screenshot-a-Day are documented here. The project follows Semantic Versioning.
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-08-17
 
 ### Added
 
