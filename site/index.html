@@ -38,6 +38,25 @@
       content="A self-hosted Wayback Machine for the sites you are responsible for."
     />
     <meta name="twitter:image" content="https://arts-link.github.io/screenshot-a-day/og.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Screenshot-a-Day",
+        "description": "Self-hosted visual history for websites.",
+        "url": "https://arts-link.github.io/screenshot-a-day/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Docker-compatible Linux, macOS, and Windows hosts",
+        "softwareVersion": "0.1.0",
+        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
+        "codeRepository": "https://github.com/arts-link/screenshot-a-day",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
     <link rel="stylesheet" href="./styles.css" />
     <title>Screenshot-a-Day — A visual history you own</title>
   </head>
@@ -209,6 +228,9 @@
             installation key, private targets require an explicit allowlist, and your images stay in
             storage you control.
           </p>
+          <p>
+            Screenshot-a-Day includes no product telemetry and does not report usage to Arts-Link.
+          </p>
           <a href="https://github.com/arts-link/screenshot-a-day/blob/main/docs/security.md">
             Read the security model <span aria-hidden="true">→</span>
           </a>
@@ -247,7 +269,7 @@
       <section class="quick-start section-shell" id="quick-start">
         <div class="quick-copy">
           <p class="eyebrow">Bring your own machine</p>
-          <h2>Four lines from zero to visual memory.</h2>
+          <h2>A short setup to visual memory.</h2>
           <p>
             Screenshot-a-Day ships as two containers and one persistent data volume. Add your
             installation secrets, bring it up, and open the setup screen.
@@ -266,6 +288,7 @@
 <span class="prompt">$</span> cd screenshot-a-day
 <span class="prompt">$</span> cp .env.example .env
 <span class="comment"># Add the three generated secrets to .env, then:</span>
+<span class="prompt">$</span> docker compose pull
 <span class="prompt">$</span> docker compose up -d</code></pre>
           <a
             class="terminal-link"

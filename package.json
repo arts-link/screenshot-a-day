@@ -10,9 +10,10 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm version:check",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm docs:check && pnpm site:check && pnpm version:check",
     "dev": "pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm --parallel --filter @sad/api --filter @sad/web --filter @sad/worker dev",
     "docs:check": "node scripts/check-docs.mjs",
+    "site:check": "node scripts/check-site.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
