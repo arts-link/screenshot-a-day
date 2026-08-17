@@ -555,6 +555,22 @@ export class AppDatabase {
     return row;
   }
 
+  renewLease(
+    jobId: string,
+    leaseToken: string,
+    leaseSeconds = 120,
+    now = new Date(),
+  ): string | null {
+    const expires = new Date(now.getTime() + leaseSeconds * 1000).toISOString();
+    const result = this.raw
+      .prepare(
+        `UPDATE jobs SET lease_expires_at=?,updated_at=?
+        WHERE id=? AND status='leased' AND lease_token=? AND lease_expires_at>?`,
+      )
+      .run(expires, now.toISOString(), jobId, leaseToken, now.toISOString());
+    return result.changes === 1 ? expires : null;
+  }
+
   recordCapture(
     job: JobRow,
     input: Omit<CaptureRow, "id" | "project_id" | "profile_id" | "run_id" | "job_id">,

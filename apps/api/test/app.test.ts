@@ -187,6 +187,44 @@ describe("control plane", () => {
     expect((await app.inject({ url: "/api/v1/projects" })).statusCode).toBe(401);
   });
 
+  it("renews an active worker lease without changing its token", async () => {
+    const created = await createFixtureProject("lease-renewal");
+    const project = created.json<{ id: string }>();
+    await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/runs`,
+      headers: { cookie: `sad_session=${sessionToken}` },
+      payload: {},
+    });
+    const claim = await app.inject({
+      method: "POST",
+      url: "/internal/v1/jobs/claim",
+      headers: { authorization: `Bearer ${"w".repeat(32)}` },
+    });
+    const job = claim.json<{ id: string; leaseToken: string }>();
+    const before = new Date(Date.now() + 1_000).toISOString();
+    db.raw.prepare("UPDATE jobs SET lease_expires_at=? WHERE id=?").run(before, job.id);
+
+    const renewed = await app.inject({
+      method: "POST",
+      url: `/internal/v1/jobs/${job.id}/renew`,
+      headers: { authorization: `Bearer ${"w".repeat(32)}` },
+      payload: { leaseToken: job.leaseToken },
+    });
+    expect(renewed.statusCode).toBe(200);
+    expect(
+      new Date(renewed.json<{ leaseExpiresAt: string }>().leaseExpiresAt).getTime(),
+    ).toBeGreaterThan(Date.now() + 100_000);
+
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/internal/v1/jobs/${job.id}/renew`,
+      headers: { authorization: `Bearer ${"w".repeat(32)}` },
+      payload: { leaseToken: "wrong-token" },
+    });
+    expect(rejected.statusCode).toBe(409);
+  });
+
   it("keeps target credentials write-only and supports complete profile editing", async () => {
     const cookie = `sad_session=${sessionToken}`;
     const created = await createFixtureProject("managed");
