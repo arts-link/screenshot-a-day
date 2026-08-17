@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://arts-link.github.io/screenshot-a-day/sitemap.xml
