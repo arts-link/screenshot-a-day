@@ -3,6 +3,7 @@ import { WorkerApi } from "./api.js";
 import { runCapture } from "./capture.js";
 import { loadWorkerConfig } from "./config.js";
 import { runExport } from "./export.js";
+import { withLeaseRenewal } from "./lease.js";
 
 const config = loadWorkerConfig();
 const api = new WorkerApi(config);
@@ -27,14 +28,16 @@ async function loop(slot: number): Promise<void> {
           attempt: job.attempt,
         }),
       );
-      if (job.type === "capture") await runCapture(job, api);
-      else {
-        try {
-          await runExport(job, api, config);
-        } catch (error) {
-          await api.reportError(job, error instanceof Error ? error.message : "Export failed");
+      await withLeaseRenewal(job, api, async () => {
+        if (job.type === "capture") await runCapture(job, api);
+        else {
+          try {
+            await runExport(job, api, config);
+          } catch (error) {
+            await api.reportError(job, error instanceof Error ? error.message : "Export failed");
+          }
         }
-      }
+      });
     } catch (error) {
       console.error(
         JSON.stringify({

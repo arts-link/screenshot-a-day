@@ -17,6 +17,15 @@ export class WorkerApi {
     return workerJobSchema.parse(await response.json());
   }
 
+  async renew(job: WorkerJob): Promise<void> {
+    const response = await fetch(`${this.config.apiUrl}/internal/v1/jobs/${job.id}/renew`, {
+      method: "POST",
+      headers: this.headers({ "content-type": "application/json" }),
+      body: JSON.stringify({ leaseToken: job.leaseToken }),
+    });
+    if (!response.ok) throw new Error(`Lease renewal failed with HTTP ${response.status}`);
+  }
+
   async upload(job: WorkerJob, bytes: Buffer, metadata: unknown): Promise<void> {
     const response = await fetch(`${this.config.apiUrl}/internal/v1/jobs/${job.id}/artifact`, {
       method: "POST",

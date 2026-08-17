@@ -699,6 +699,15 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     return reply.type("image/png").send(await blobs.get(capture.image_key));
   });
 
+  app.post<{ Params: { id: string } }>("/internal/v1/jobs/:id/renew", async (request, reply) => {
+    if (!workerAuthorized(request, config))
+      return reply.code(401).send({ error: "Worker authentication required" });
+    const { leaseToken } = z.object({ leaseToken: z.string() }).parse(request.body);
+    const leaseExpiresAt = db.renewLease(request.params.id, leaseToken);
+    if (!leaseExpiresAt) return reply.code(409).send({ error: "Invalid or expired job lease" });
+    return { leaseExpiresAt };
+  });
+
   app.post<{ Params: { id: string } }>("/internal/v1/jobs/:id/artifact", async (request, reply) => {
     if (!workerAuthorized(request, config))
       return reply.code(401).send({ error: "Worker authentication required" });
