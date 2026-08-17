@@ -10,6 +10,7 @@ import {
   type Page,
 } from "playwright";
 import type { WorkerApi } from "./api.js";
+import { SafeProxy } from "./safe-proxy.js";
 
 type CaptureJob = Extract<WorkerJob, { type: "capture" }>;
 
@@ -48,8 +49,10 @@ export async function runCapture(job: CaptureJob, api: WorkerApi): Promise<void>
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let page: Page | undefined;
+  let proxy: SafeProxy | undefined;
   try {
     await assertSafeUrl(job.url, job.privateTargetAllowlist);
+    proxy = await SafeProxy.start(job.privateTargetAllowlist);
     const browserType = { chromium, firefox, webkit }[job.profile.browser];
     browser = await browserType.launch({ headless: true });
     const preset = job.profile.deviceName ? devices[job.profile.deviceName] : undefined;
@@ -62,6 +65,7 @@ export async function runCapture(job: CaptureJob, api: WorkerApi): Promise<void>
       timezoneId: job.profile.timezone,
       colorScheme: job.profile.colorScheme,
       reducedMotion: job.profile.reducedMotion,
+      proxy: { server: proxy.url },
       ignoreHTTPSErrors: false,
     });
     if (job.cookies.length) await context.addCookies(job.cookies);
@@ -129,5 +133,6 @@ export async function runCapture(job: CaptureJob, api: WorkerApi): Promise<void>
   } finally {
     await context?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
+    await proxy?.close().catch(() => undefined);
   }
 }

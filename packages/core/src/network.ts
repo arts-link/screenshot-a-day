@@ -1,7 +1,12 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import ipaddr from "ipaddr.js";
 
-type Lookup = typeof dnsLookup;
+export type NetworkLookup = typeof dnsLookup;
+
+export interface ResolvedTarget {
+  url: URL;
+  addresses: Array<{ address: string; family: 4 | 6 }>;
+}
 
 export class TargetPolicyError extends Error {
   readonly statusCode = 400;
@@ -56,11 +61,11 @@ function isAllowed(address: string, hostname: string, allowlist: string[]): bool
   });
 }
 
-export async function assertSafeUrl(
+export async function resolveSafeUrl(
   input: string,
   allowlist: string[] = [],
-  lookup: Lookup = dnsLookup,
-): Promise<URL> {
+  lookup: NetworkLookup = dnsLookup,
+): Promise<ResolvedTarget> {
   const url = new URL(input);
   if (!new Set(["http:", "https:"]).has(url.protocol))
     throw new TargetPolicyError("Only HTTP(S) URLs are supported");
@@ -77,5 +82,22 @@ export async function assertSafeUrl(
       throw new TargetPolicyError(`Target resolves to blocked address ${address}`);
     }
   }
-  return url;
+  return {
+    url,
+    addresses: addresses.map(({ address }) => {
+      const normalized = normalizeAddress(address);
+      return {
+        address: normalized.toString(),
+        family: normalized.kind() === "ipv4" ? 4 : 6,
+      };
+    }),
+  };
+}
+
+export async function assertSafeUrl(
+  input: string,
+  allowlist: string[] = [],
+  lookup: NetworkLookup = dnsLookup,
+): Promise<URL> {
+  return (await resolveSafeUrl(input, allowlist, lookup)).url;
 }
