@@ -302,6 +302,56 @@ describe("control plane", () => {
     ).toBe(401);
   });
 
+  it("prevents project-scoped tokens from escaping their authorization boundary", async () => {
+    const cookie = `sad_session=${sessionToken}`;
+    const first = await createFixtureProject("scoped-first");
+    const second = await createFixtureProject("scoped-second");
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(201);
+    const firstId = first.json<{ id: string }>().id;
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/tokens",
+      headers: { cookie },
+      payload: {
+        name: "Project automation",
+        scopes: ["read", "manage"],
+        projectIds: [firstId],
+      },
+    });
+    const token = created.json<{ token: string }>().token;
+    const authorization = { authorization: `Bearer ${token}` };
+
+    const projects = await app.inject({ url: "/api/v1/projects", headers: authorization });
+    expect(projects.statusCode).toBe(200);
+    expect(projects.json<Array<{ id: string }>>().map((project) => project.id)).toEqual([firstId]);
+
+    for (const request of [
+      app.inject({ url: "/api/v1/tokens", headers: authorization }),
+      app.inject({ url: "/api/v1/storage", headers: authorization }),
+      app.inject({
+        method: "POST",
+        url: "/api/v1/tokens",
+        headers: authorization,
+        payload: { name: "Escalated", scopes: ["manage"], projectIds: null },
+      }),
+      app.inject({
+        method: "POST",
+        url: "/api/v1/projects",
+        headers: authorization,
+        payload: {
+          name: "Unauthorized",
+          slug: "unauthorized",
+          url: "http://localhost:9999",
+          profiles: [{ name: "Desktop" }],
+        },
+      }),
+    ]) {
+      expect((await request).statusCode).toBe(401);
+    }
+  });
+
   it("returns a client error for blocked target addresses", async () => {
     const response = await app.inject({
       method: "POST",
