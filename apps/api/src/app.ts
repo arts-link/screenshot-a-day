@@ -723,10 +723,11 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     const bytes = request.body as Buffer;
     if (job.type === "export") {
       const format = (JSON.parse(job.payload_json) as { format: "gif" | "webm" }).format;
-      const key = `exports/${job.project_id}/${job.profile_id}/latest.${format}`;
+      const key = `exports/${job.project_id}/${job.profile_id}/${job.id}.${format}`;
       await blobs.put(key, bytes);
-      const saved = db.saveExport(job, key, Number(metadata.frameCount ?? 0));
-      return reply.code(201).send({ id: saved.id });
+      const { exported, published } = db.saveExport(job, key, Number(metadata.frameCount ?? 0));
+      if (!published) await blobs.delete(key);
+      return reply.code(201).send({ id: exported.id, published });
     }
     const capturedAt = String(metadata.capturedAt ?? new Date().toISOString());
     const imageKey = `captures/${job.project_id}/${job.profile_id}/${job.id}.png`;
