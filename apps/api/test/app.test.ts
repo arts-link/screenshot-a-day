@@ -2,9 +2,9 @@ import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashToken } from "@sad/core";
-import { buildApp } from "../src/app.js";
+import { buildApp, drainBlobDeletions } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
 import { AppDatabase } from "../src/database.js";
 import { LocalBlobStore } from "../src/storage.js";
@@ -14,6 +14,7 @@ describe("control plane", () => {
   let directory: string;
   let db: AppDatabase;
   let app: FastifyInstance;
+  let blobs: LocalBlobStore;
   const sessionToken = "administrator-session-token";
 
   beforeEach(async () => {
@@ -34,7 +35,8 @@ describe("control plane", () => {
       buildCommit: "test-commit",
       logLevel: "silent",
     };
-    app = await buildApp({ config, db, blobs: new LocalBlobStore(join(directory, "blobs")) });
+    blobs = new LocalBlobStore(join(directory, "blobs"));
+    app = await buildApp({ config, db, blobs });
     await app.ready();
   });
 
@@ -275,6 +277,104 @@ describe("control plane", () => {
       frame_count: 2,
       status: "succeeded",
     });
+  });
+
+  it("deletes profile and project artifacts through the durable cleanup queue", async () => {
+    const created = await createFixtureProject("artifact-cleanup");
+    const project = created.json<{ id: string; profiles: Array<{ id: string }> }>();
+    const added = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/profiles`,
+      headers: { cookie: `sad_session=${sessionToken}` },
+      payload: {
+        name: "Mobile",
+        browser: "chromium",
+        enabled: true,
+        viewportWidth: 390,
+        viewportHeight: 844,
+        deviceScaleFactor: 1,
+        extent: "viewport",
+        colorScheme: "light",
+        locale: "en-US",
+        timezone: "UTC",
+        reducedMotion: "reduce",
+        delayMs: 0,
+        timeoutMs: 30000,
+      },
+    });
+    const secondProfileId = added.json<{ id: string }>().id;
+
+    const seedArtifacts = async (profileId: string, prefix: string) => {
+      const runId = db.enqueueRun(project.id, "manual", [profileId]);
+      const job = db.claimJob()!;
+      expect(job.run_id).toBe(runId);
+      const keys = [`${prefix}/image.png`, `${prefix}/thumbnail.webp`, `${prefix}/diff.png`];
+      await Promise.all(keys.map((key) => blobs.put(key, Buffer.from(key))));
+      db.recordCapture(job, {
+        status: "succeeded",
+        captured_at: new Date().toISOString(),
+        final_url: "http://localhost:9999",
+        http_status: 200,
+        width: 1,
+        height: 1,
+        sha256: "digest",
+        change_percent: 0,
+        image_key: keys[0]!,
+        thumbnail_key: keys[1]!,
+        diff_key: keys[2]!,
+        error: null,
+        duration_ms: 1,
+      });
+      const exportId = db.enqueueExport(project.id, profileId, "gif", {
+        format: "gif",
+        captureIds: [],
+      });
+      const exportJob = db.claimJob()!;
+      expect(exportJob.id).toBe(exportId);
+      const exportKey = `${prefix}/animation.gif`;
+      await blobs.put(exportKey, Buffer.from("gif"));
+      db.saveExport(exportJob, exportKey, 1);
+      return [...keys, exportKey];
+    };
+
+    const profileKeys = await seedArtifacts(secondProfileId, "profile-artifacts");
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/projects/${project.id}/profiles/${secondProfileId}`,
+          headers: { cookie: `sad_session=${sessionToken}` },
+        })
+      ).statusCode,
+    ).toBe(204);
+    for (const key of profileKeys) await expect(blobs.get(key)).rejects.toThrow();
+
+    const projectKeys = await seedArtifacts(project.profiles[0]!.id, "project-artifacts");
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/projects/${project.id}`,
+          headers: { cookie: `sad_session=${sessionToken}` },
+        })
+      ).statusCode,
+    ).toBe(204);
+    for (const key of projectKeys) await expect(blobs.get(key)).rejects.toThrow();
+    expect(db.pendingBlobDeletions()).toEqual([]);
+  });
+
+  it("retains failed blob deletions for a later retry", async () => {
+    db.queueBlobDeletion("retry/artifact.png");
+    const remove = vi
+      .fn<() => Promise<void>>()
+      .mockRejectedValueOnce(new Error("storage unavailable"))
+      .mockResolvedValueOnce(undefined);
+
+    await drainBlobDeletions(db, { delete: remove } as never);
+    expect(db.pendingBlobDeletions()).toEqual(["retry/artifact.png"]);
+    await drainBlobDeletions(db, { delete: remove } as never);
+    expect(db.pendingBlobDeletions()).toEqual([]);
+    expect(remove).toHaveBeenCalledTimes(2);
   });
 
   it("keeps target credentials write-only and supports complete profile editing", async () => {
