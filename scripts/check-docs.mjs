@@ -15,6 +15,8 @@ const files = [
   "docs/guides/deployment.md",
   "docs/guides/backups.md",
   "docs/guides/troubleshooting.md",
+  "docs/launch/announcement-copy.md",
+  "docs/launch/asset-brief.md",
   "docs/plans/release-v0.1.0.md",
   "docs/releases/v0.1.0.md",
 ];
