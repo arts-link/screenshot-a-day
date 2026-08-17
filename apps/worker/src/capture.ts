@@ -13,6 +13,21 @@ import type { WorkerApi } from "./api.js";
 
 type CaptureJob = Extract<WorkerJob, { type: "capture" }>;
 
+export function headersForCaptureRequest(
+  requestUrl: string,
+  captureOrigin: string,
+  requestHeaders: Record<string, string>,
+  captureHeaders: Record<string, string>,
+): Record<string, string> | undefined {
+  if (new URL(requestUrl).origin !== captureOrigin) return undefined;
+
+  const headers = { ...requestHeaders };
+  for (const [name, value] of Object.entries(captureHeaders)) {
+    headers[name.toLowerCase()] = value;
+  }
+  return headers;
+}
+
 function redactError(error: unknown): string {
   const message = error instanceof Error ? `${error.name}: ${error.message}` : "Capture failed";
   return message
@@ -38,6 +53,7 @@ export async function runCapture(job: CaptureJob, api: WorkerApi): Promise<void>
     const browserType = { chromium, firefox, webkit }[job.profile.browser];
     browser = await browserType.launch({ headless: true });
     const preset = job.profile.deviceName ? devices[job.profile.deviceName] : undefined;
+    const captureOrigin = new URL(job.url).origin;
     context = await browser.newContext({
       ...preset,
       viewport: { width: job.profile.viewportWidth, height: job.profile.viewportHeight },
@@ -46,15 +62,21 @@ export async function runCapture(job: CaptureJob, api: WorkerApi): Promise<void>
       timezoneId: job.profile.timezone,
       colorScheme: job.profile.colorScheme,
       reducedMotion: job.profile.reducedMotion,
-      extraHTTPHeaders: job.headers,
       ignoreHTTPSErrors: false,
     });
     if (job.cookies.length) await context.addCookies(job.cookies);
     page = await context.newPage();
     await page.route("**/*", async (route) => {
       try {
-        await assertSafeUrl(route.request().url(), job.privateTargetAllowlist);
-        await route.continue();
+        const request = route.request();
+        await assertSafeUrl(request.url(), job.privateTargetAllowlist);
+        const headers = headersForCaptureRequest(
+          request.url(),
+          captureOrigin,
+          request.headers(),
+          job.headers,
+        );
+        await route.continue(headers ? { headers } : undefined);
       } catch {
         await route.abort("blockedbyclient");
       }
