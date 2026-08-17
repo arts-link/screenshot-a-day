@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
@@ -12,7 +12,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm --filter @sad/web build && pnpm --filter @sad/api build && pnpm deploy --legacy --filter @sad/api --prod /out
 
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 ARG SAD_VERSION=0.1.0
 ARG SAD_COMMIT=unknown
 LABEL org.opencontainers.image.title="Screenshot-a-Day API" \
