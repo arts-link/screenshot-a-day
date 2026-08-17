@@ -56,6 +56,11 @@ button {
   font-weight: 760;
   letter-spacing: -0.03em;
 }
+.brand-lockup {
+  display: grid;
+  gap: 7px;
+  width: max-content;
+}
 .brand > span:last-child span {
   color: #8d9aad;
   font-weight: 520;
@@ -71,6 +76,28 @@ button {
   height: 34px;
   padding: 7px;
   box-shadow: 0 0 28px #dbff5340;
+}
+.arts-link-credit {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  color: #68758a;
+  text-decoration: none;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  transition: color 0.18s ease;
+}
+.arts-link-credit strong {
+  color: #aab6c8;
+  font-weight: 760;
+  letter-spacing: -0.01em;
+}
+.arts-link-credit:hover,
+.arts-link-credit:hover strong {
+  color: #dbff53;
+}
+.brand-lockup > .arts-link-credit {
+  padding-left: 45px;
 }
 .sidebar nav {
   display: grid;
@@ -888,13 +915,16 @@ legend {
   grid-template-columns: 1fr 2fr 1fr;
 }
 .source-note {
-  margin: 20px 0 0 !important;
+  margin: 20px 0 0;
   text-align: center;
-  color: #637086 !important;
+  color: #637086;
   font-size: 10px;
 }
-.source-note a,
-.public-page footer a {
+.source-note .arts-link-credit {
+  display: inline-flex;
+}
+.source-note > a:not(.arts-link-credit),
+.public-page footer > a:not(.arts-link-credit) {
   color: #9bad54;
   text-decoration: none;
 }
@@ -988,6 +1018,9 @@ legend {
   border-top: 1px solid #242b39;
   margin-top: 40px;
   padding-top: 20px;
+}
+.public-page footer .arts-link-credit {
+  display: inline-flex;
 }
 .public-error {
   padding: 40px;

@@ -32,6 +32,22 @@ import { api, type Comparison } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
 import { Button, Card, Empty, ErrorNotice, Field, Status } from "./components";
 
+const ARTS_LINK_URL = "https://www.arts-link.com/";
+
+function ArtsLinkCredit() {
+  return (
+    <a
+      className="arts-link-credit"
+      href={ARTS_LINK_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="An Arts Link project (opens in a new tab)"
+    >
+      <span>an</span> <strong>arts-link</strong> <span>project ↗</span>
+    </a>
+  );
+}
+
 function Shell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -39,14 +55,17 @@ function Shell() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <Link to="/" className="brand">
-          <span className="brand-mark">
-            <Aperture />
-          </span>
-          <span>
-            Screenshot<span>-a-Day</span>
-          </span>
-        </Link>
+        <div className="brand-lockup">
+          <Link to="/" className="brand">
+            <span className="brand-mark">
+              <Aperture />
+            </span>
+            <span>
+              Screenshot<span>-a-Day</span>
+            </span>
+          </Link>
+          <ArtsLinkCredit />
+        </div>
         <nav>
           <Link to="/">
             <Activity />
@@ -170,12 +189,13 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
             <ArrowRight size={17} />
           </Button>
         </form>
-        <p className="source-note">
-          Open source under AGPL-3.0 ·{" "}
+        <div className="source-note">
+          <ArtsLinkCredit />
+          <span aria-hidden="true"> · </span>
           <a href="https://github.com/arts-link/screenshot-a-day" target="_blank" rel="noreferrer">
-            view source
+            AGPL-3.0 source
           </a>
-        </p>
+        </div>
       </Card>
     </div>
   );
@@ -1218,7 +1238,10 @@ function PublicGallery() {
         ))}
       </div>
       <footer>
-        Recorded with Screenshot-a-Day · v0.1.0 ·{" "}
+        <span>Recorded with Screenshot-a-Day · v0.1.0</span>
+        <span aria-hidden="true"> · </span>
+        <ArtsLinkCredit />
+        <span aria-hidden="true"> · </span>
         <a href="https://github.com/arts-link/screenshot-a-day" target="_blank" rel="noreferrer">
           AGPL-3.0 source
         </a>
