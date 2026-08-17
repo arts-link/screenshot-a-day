@@ -701,9 +701,29 @@ export class AppDatabase {
     payload: unknown,
   ): string {
     const now = new Date().toISOString();
-    const runId = randomUUID();
-    const jobId = randomUUID();
-    this.raw.transaction(() => {
+    return this.raw.transaction(() => {
+      const queued = (
+        this.raw
+          .prepare(
+            `SELECT * FROM jobs WHERE profile_id=? AND type='export' AND status='queued'
+            ORDER BY rowid DESC`,
+          )
+          .all(profileId) as JobRow[]
+      ).find((job) => (JSON.parse(job.payload_json) as { format?: string }).format === format);
+      if (queued) {
+        this.raw
+          .prepare("UPDATE jobs SET payload_json=?,available_at=?,updated_at=? WHERE id=?")
+          .run(JSON.stringify(payload), now, now, queued.id);
+        this.raw
+          .prepare(
+            "UPDATE exports SET status='queued',settings_json=?,updated_at=? WHERE profile_id=? AND format=?",
+          )
+          .run(JSON.stringify(payload), now, profileId, format);
+        return queued.id;
+      }
+
+      const runId = randomUUID();
+      const jobId = randomUUID();
       this.raw
         .prepare(
           "INSERT INTO runs(id,project_id,source,status,created_at) VALUES (?,?,'manual','queued',?)",
@@ -720,27 +740,44 @@ export class AppDatabase {
         VALUES (?,?,?,?, 'queued',?,?,?) ON CONFLICT(profile_id,format) DO UPDATE SET status='queued',settings_json=excluded.settings_json,updated_at=excluded.updated_at`,
         )
         .run(randomUUID(), projectId, profileId, format, JSON.stringify(payload), now, now);
+      return jobId;
     })();
-    return jobId;
   }
-  saveExport(job: JobRow, blobKey: string, frameCount: number): ExportRow {
+  saveExport(
+    job: JobRow,
+    blobKey: string,
+    frameCount: number,
+  ): { exported: ExportRow; published: boolean } {
     if (!job.profile_id) throw new Error("Export job has no profile");
     const format = (JSON.parse(job.payload_json) as { format: "gif" | "webm" }).format;
     const now = new Date().toISOString();
-    this.raw.transaction(() => {
-      this.raw
-        .prepare(
-          "UPDATE exports SET status='succeeded',blob_key=?,frame_count=?,updated_at=? WHERE profile_id=? AND format=?",
-        )
-        .run(blobKey, frameCount, now, job.profile_id, format);
+    const published = this.raw.transaction(() => {
+      const current = this.raw.prepare("SELECT rowid FROM jobs WHERE id=?").get(job.id) as
+        { rowid: number } | undefined;
+      if (!current) throw new Error("Export job no longer exists");
+      const newer = (
+        this.raw
+          .prepare("SELECT payload_json FROM jobs WHERE profile_id=? AND type='export' AND rowid>?")
+          .all(job.profile_id, current.rowid) as Array<{ payload_json: string }>
+      ).some(
+        (candidate) =>
+          (JSON.parse(candidate.payload_json) as { format?: string }).format === format,
+      );
+      if (!newer)
+        this.raw
+          .prepare(
+            "UPDATE exports SET status='succeeded',blob_key=?,frame_count=?,updated_at=? WHERE profile_id=? AND format=?",
+          )
+          .run(blobKey, frameCount, now, job.profile_id, format);
       this.raw
         .prepare(
           "UPDATE jobs SET status='succeeded',lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?",
         )
         .run(now, job.id);
       this.finishRun(job.run_id);
+      return !newer;
     })();
-    return this.getExport(job.profile_id, format)!;
+    return { exported: this.getExport(job.profile_id, format)!, published };
   }
   getExport(profileId: string, format: "gif" | "webm"): ExportRow | undefined {
     return this.raw

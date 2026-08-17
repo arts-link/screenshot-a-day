@@ -225,6 +225,58 @@ describe("control plane", () => {
     expect(rejected.statusCode).toBe(409);
   });
 
+  it("coalesces queued exports and prevents stale jobs from replacing the latest artifact", async () => {
+    const created = await createFixtureProject("coalesced-exports");
+    const project = created.json<{ id: string; profiles: Array<{ id: string }> }>();
+    const profileId = project.profiles[0]!.id;
+    const payload = (captureIds: string[]) => ({
+      format: "gif" as const,
+      captureIds,
+      frameDurationMs: 750,
+      canvasWidth: 1280,
+      canvasHeight: 720,
+      timestampOverlay: true,
+      background: "#111827",
+    });
+
+    const firstId = db.enqueueExport(project.id, profileId, "gif", payload(["old"]));
+    const coalescedId = db.enqueueExport(project.id, profileId, "gif", payload(["new"]));
+    expect(coalescedId).toBe(firstId);
+    expect(
+      JSON.parse(
+        (
+          db.raw.prepare("SELECT payload_json FROM jobs WHERE id=?").get(firstId) as {
+            payload_json: string;
+          }
+        ).payload_json,
+      ),
+    ).toMatchObject({ captureIds: ["new"] });
+
+    const first = db.claimJob();
+    expect(first?.id).toBe(firstId);
+    const secondId = db.enqueueExport(project.id, profileId, "gif", payload(["newest"]));
+    expect(secondId).not.toBe(firstId);
+    expect(db.enqueueExport(project.id, profileId, "gif", payload(["final"]))).toBe(secondId);
+    expect(
+      db.raw
+        .prepare(
+          "SELECT count(*) count FROM jobs WHERE profile_id=? AND type='export' AND status IN ('queued','leased')",
+        )
+        .get(profileId),
+    ).toEqual({ count: 2 });
+
+    expect(db.saveExport(first!, "exports/old.gif", 1).published).toBe(false);
+    expect(db.getExport(profileId, "gif")?.blob_key).toBeNull();
+    const second = db.claimJob();
+    expect(second?.id).toBe(secondId);
+    expect(db.saveExport(second!, "exports/new.gif", 2).published).toBe(true);
+    expect(db.getExport(profileId, "gif")).toMatchObject({
+      blob_key: "exports/new.gif",
+      frame_count: 2,
+      status: "succeeded",
+    });
+  });
+
   it("keeps target credentials write-only and supports complete profile editing", async () => {
     const cookie = `sad_session=${sessionToken}`;
     const created = await createFixtureProject("managed");
