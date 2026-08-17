@@ -155,6 +155,9 @@ CREATE TABLE IF NOT EXISTS exports (
   status TEXT NOT NULL, blob_key TEXT, frame_count INTEGER NOT NULL DEFAULT 0, settings_json TEXT NOT NULL,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(profile_id, format)
 );
+CREATE TABLE IF NOT EXISTS blob_deletions (
+  key TEXT PRIMARY KEY, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS webhooks (
   id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, url TEXT NOT NULL,
   secret_encrypted TEXT NOT NULL, threshold REAL NOT NULL DEFAULT 0, events_json TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
@@ -397,7 +400,29 @@ export class AppDatabase {
     return this.getProject(id);
   }
   deleteProject(id: string): boolean {
-    return this.raw.prepare("DELETE FROM projects WHERE id=?").run(id).changes > 0;
+    return this.raw.transaction(() => {
+      if (!this.getProject(id)) return false;
+      const captures = this.raw
+        .prepare("SELECT image_key,thumbnail_key,diff_key FROM captures WHERE project_id=?")
+        .all(id) as Array<{
+        image_key: string | null;
+        thumbnail_key: string | null;
+        diff_key: string | null;
+      }>;
+      const exports = this.raw
+        .prepare("SELECT blob_key FROM exports WHERE project_id=?")
+        .all(id) as Array<{ blob_key: string | null }>;
+      this.queueBlobDeletions([
+        ...captures.flatMap((capture) => [
+          capture.image_key,
+          capture.thumbnail_key,
+          capture.diff_key,
+        ]),
+        ...exports.map((exported) => exported.blob_key),
+      ]);
+      this.raw.prepare("DELETE FROM projects WHERE id=?").run(id);
+      return true;
+    })();
   }
   updateProject(
     id: string,
@@ -471,7 +496,55 @@ export class AppDatabase {
     return this.getProfile(id);
   }
   deleteProfile(id: string): boolean {
-    return this.raw.prepare("DELETE FROM profiles WHERE id=?").run(id).changes > 0;
+    return this.raw.transaction(() => {
+      const profile = this.getProfile(id);
+      if (!profile) return false;
+      const captures = this.raw
+        .prepare("SELECT image_key,thumbnail_key,diff_key FROM captures WHERE profile_id=?")
+        .all(id) as Array<{
+        image_key: string | null;
+        thumbnail_key: string | null;
+        diff_key: string | null;
+      }>;
+      const exports = this.raw
+        .prepare("SELECT blob_key FROM exports WHERE profile_id=?")
+        .all(id) as Array<{ blob_key: string | null }>;
+      this.queueBlobDeletions([
+        ...captures.flatMap((capture) => [
+          capture.image_key,
+          capture.thumbnail_key,
+          capture.diff_key,
+        ]),
+        ...exports.map((exported) => exported.blob_key),
+      ]);
+      this.raw.prepare("DELETE FROM profiles WHERE id=?").run(id);
+      return true;
+    })();
+  }
+
+  queueBlobDeletion(key: string): void {
+    this.queueBlobDeletions([key]);
+  }
+
+  private queueBlobDeletions(keys: Array<string | null>): void {
+    const insert = this.raw.prepare(
+      "INSERT OR IGNORE INTO blob_deletions(key,created_at) VALUES (?,?)",
+    );
+    const now = new Date().toISOString();
+    for (const key of new Set(keys.filter((value): value is string => Boolean(value))))
+      insert.run(key, now);
+  }
+
+  pendingBlobDeletions(limit = 100): string[] {
+    return (
+      this.raw
+        .prepare("SELECT key FROM blob_deletions ORDER BY created_at,key LIMIT ?")
+        .all(limit) as Array<{ key: string }>
+    ).map(({ key }) => key);
+  }
+
+  finishBlobDeletion(key: string): void {
+    this.raw.prepare("DELETE FROM blob_deletions WHERE key=?").run(key);
   }
 
   enqueueRun(
@@ -763,12 +836,16 @@ export class AppDatabase {
         (candidate) =>
           (JSON.parse(candidate.payload_json) as { format?: string }).format === format,
       );
-      if (!newer)
+      if (!newer) {
+        const previous = this.getExport(job.profile_id!, format);
         this.raw
           .prepare(
             "UPDATE exports SET status='succeeded',blob_key=?,frame_count=?,updated_at=? WHERE profile_id=? AND format=?",
           )
           .run(blobKey, frameCount, now, job.profile_id, format);
+        if (previous?.blob_key && previous.blob_key !== blobKey)
+          this.queueBlobDeletions([previous.blob_key]);
+      }
       this.raw
         .prepare(
           "UPDATE jobs SET status='succeeded',lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?",

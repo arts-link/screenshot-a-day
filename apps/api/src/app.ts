@@ -53,6 +53,31 @@ interface Dependencies {
   blobs?: BlobStore;
 }
 
+export async function drainBlobDeletions(
+  db: AppDatabase,
+  blobs: BlobStore,
+  log?: Pick<FastifyInstance["log"], "warn">,
+): Promise<void> {
+  for (;;) {
+    const keys = db.pendingBlobDeletions();
+    if (keys.length === 0) return;
+    let deleted = 0;
+    for (const key of keys) {
+      try {
+        await blobs.delete(key);
+        db.finishBlobDeletion(key);
+        deleted++;
+      } catch (error) {
+        log?.warn(
+          { key, error: error instanceof Error ? error.message : "unknown" },
+          "blob deletion will be retried",
+        );
+      }
+    }
+    if (deleted < keys.length) return;
+  }
+}
+
 function captureDto(row: CaptureRow): CaptureRecord {
   return {
     id: row.id,
@@ -108,6 +133,16 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     bodyLimit: 30 * 1024 * 1024,
   });
   const setup = new SetupManager();
+  let deletionDrain: Promise<void> | undefined;
+  const drainDeletions = () => {
+    deletionDrain ??= drainBlobDeletions(db, blobs, app.log).finally(() => {
+      deletionDrain = undefined;
+    });
+    return deletionDrain;
+  };
+  void drainDeletions();
+  const deletionTimer = setInterval(() => void drainDeletions(), 30_000);
+  deletionTimer.unref();
 
   await app.register(cookie, { secret: config.sessionSecret });
   await app.register(rateLimit, { global: false, max: 10, timeWindow: "1 minute" });
@@ -291,9 +326,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
   });
   app.delete<{ Params: { id: string } }>("/api/v1/projects/:id", async (request, reply) => {
     if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
-    return db.deleteProject(request.params.id)
-      ? reply.code(204).send()
-      : reply.code(404).send({ error: "Project not found" });
+    if (!db.deleteProject(request.params.id))
+      return reply.code(404).send({ error: "Project not found" });
+    await drainDeletions();
+    return reply.code(204).send();
   });
   app.patch<{ Params: { id: string } }>("/api/v1/projects/:id", async (request, reply) => {
     if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
@@ -409,6 +445,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       if (db.listProfiles(request.params.id).length === 1)
         return reply.code(409).send({ error: "A project must retain at least one profile" });
       db.deleteProfile(current.id);
+      await drainDeletions();
       return reply.code(204).send();
     },
   );
@@ -726,7 +763,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       const key = `exports/${job.project_id}/${job.profile_id}/${job.id}.${format}`;
       await blobs.put(key, bytes);
       const { exported, published } = db.saveExport(job, key, Number(metadata.frameCount ?? 0));
-      if (!published) await blobs.delete(key);
+      if (!published) {
+        db.queueBlobDeletion(key);
+      }
+      await drainDeletions();
       return reply.code(201).send({ id: exported.id, published });
     }
     const capturedAt = String(metadata.capturedAt ?? new Date().toISOString());
@@ -1025,6 +1065,8 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
   app.addHook("onClose", async () => {
     stopScheduler();
     stopWebhooks();
+    clearInterval(deletionTimer);
+    await deletionDrain;
     db.close();
   });
 
