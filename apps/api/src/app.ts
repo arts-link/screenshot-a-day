@@ -35,6 +35,7 @@ import {
   createSession,
   hashPassword,
   requireIdentity,
+  requireInstanceIdentity,
   SESSION_COOKIE,
   SetupManager,
   verifyPassword,
@@ -249,11 +250,16 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       : undefined;
   });
 
-  app.get("/api/v1/projects", async (request, reply) =>
-    requireIdentity(db, request, reply, "read") ? db.listProjects() : undefined,
-  );
+  app.get("/api/v1/projects", async (request, reply) => {
+    const identity = requireIdentity(db, request, reply, "read");
+    if (!identity) return;
+    const projects = db.listProjects();
+    return identity.projectIds
+      ? projects.filter((project) => identity.projectIds!.includes(project.id))
+      : projects;
+  });
   app.post("/api/v1/projects", async (request, reply) => {
-    if (!requireIdentity(db, request, reply, "manage")) return;
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
     const input = projectInputSchema.parse(request.body);
     await assertSafeUrl(input.url, config.privateTargetAllowlist);
     const next = nextSchedule(input.scheduleExpression, input.scheduleTimezone).toISOString();
@@ -441,9 +447,12 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     request: FastifyRequest<{ Params: { id: string; kind: string } }>,
     reply: FastifyReply,
   ) {
-    if (!requireIdentity(db, request, reply, "read")) return;
     const capture = db.getCapture(request.params.id);
-    if (!capture) return reply.code(404).send({ error: "Capture not found" });
+    if (!capture) {
+      if (!requireIdentity(db, request, reply, "read")) return;
+      return reply.code(404).send({ error: "Capture not found" });
+    }
+    if (!requireIdentity(db, request, reply, "read", capture.project_id)) return;
     const key = request.params.kind === "thumbnail" ? capture.thumbnail_key : capture.image_key;
     if (!key) return reply.code(404).send({ error: "Artifact not available" });
     reply
@@ -475,6 +484,8 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       return reply
         .code(400)
         .send({ error: "Two successful captures from one profile are required" });
+    if (!requireIdentity(db, request, reply, "read", first.project_id)) return;
+    if (!requireIdentity(db, request, reply, "read", second.project_id)) return;
     const result = await compareImages(
       await blobs.get(first.image_key),
       await blobs.get(second.image_key),
@@ -491,7 +502,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
   });
 
   app.get("/api/v1/tokens", async (request, reply) =>
-    requireIdentity(db, request, reply, "manage")
+    requireInstanceIdentity(db, request, reply, "manage")
       ? db.listApiTokens().map((token) => ({
           ...token,
           scopes: JSON.parse(token.scopes_json),
@@ -500,7 +511,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       : undefined,
   );
   app.get("/api/v1/storage", async (request, reply) => {
-    if (!requireIdentity(db, request, reply, "manage")) return;
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
     const usage = blobs.usage ? await blobs.usage() : { bytes: null, files: null };
     const databaseBytes = await import("node:fs/promises").then(({ stat }) =>
       stat(`${config.dataDir}/sad.sqlite`)
@@ -510,7 +521,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     return { ...usage, databaseBytes };
   });
   app.post("/api/v1/tokens", async (request, reply) => {
-    if (!requireIdentity(db, request, reply, "manage")) return;
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
     const input = z
       .object({
         name: z.string().min(1).max(80),
@@ -523,7 +534,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     return reply.code(201).send({ id, token });
   });
   app.delete<{ Params: { id: string } }>("/api/v1/tokens/:id", async (request, reply) => {
-    if (!requireIdentity(db, request, reply, "manage")) return;
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
     return db.deleteApiToken(request.params.id)
       ? reply.code(204).send()
       : reply.code(404).send({ error: "API token not found" });

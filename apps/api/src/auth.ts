@@ -98,3 +98,18 @@ export function requireIdentity(
   }
   return identity;
 }
+
+export function requireInstanceIdentity(
+  db: AppDatabase,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  scope: ApiScope,
+): Identity | null {
+  const identity = requireIdentity(db, request, reply, scope);
+  if (!identity) return null;
+  if (identity.kind === "token" && identity.projectIds) {
+    void reply.code(401).send({ error: "Instance-level authentication is required" });
+    return null;
+  }
+  return identity;
+}
