@@ -8,8 +8,6 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    env:
-      SAD_TEST_RYDER_PATH: ${{ runner.temp }}/ryder
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -31,10 +29,11 @@ jobs:
           echo "$RUNNER_TEMP/hugo" >> "$GITHUB_PATH"
       - name: Check out Ryder 0.4.1
         run: |
-          git init "$SAD_TEST_RYDER_PATH"
-          git -C "$SAD_TEST_RYDER_PATH" remote add origin https://github.com/arts-link/ryder.git
-          git -C "$SAD_TEST_RYDER_PATH" fetch --depth 1 origin 309cd9c6bbd37950c94acdd3f07438e2036d76fb
-          git -C "$SAD_TEST_RYDER_PATH" checkout --detach FETCH_HEAD
+          git init "$RUNNER_TEMP/ryder"
+          git -C "$RUNNER_TEMP/ryder" remote add origin https://github.com/arts-link/ryder.git
+          git -C "$RUNNER_TEMP/ryder" fetch --depth 1 origin 309cd9c6bbd37950c94acdd3f07438e2036d76fb
+          git -C "$RUNNER_TEMP/ryder" checkout --detach FETCH_HEAD
+          echo "SAD_TEST_RYDER_PATH=$RUNNER_TEMP/ryder" >> "$GITHUB_ENV"
       - run: pnpm check
       - run: pnpm build
       - run: pnpm audit --prod --audit-level high
