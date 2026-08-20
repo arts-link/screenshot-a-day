@@ -28,9 +28,25 @@ import {
   useParams,
 } from "react-router-dom";
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
-import { api, type Comparison } from "./api";
+import { api, type Comparison, type PublicationTarget } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
 import { Button, Card, Empty, ErrorNotice, Field, Status } from "./components";
+
+const ARTS_LINK_URL = "https://www.arts-link.com/";
+
+function ArtsLinkCredit() {
+  return (
+    <a
+      className="arts-link-credit"
+      href={ARTS_LINK_URL}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="An Arts Link project (opens in a new tab)"
+    >
+      <span>an</span> <strong>arts-link</strong> <span>project ↗</span>
+    </a>
+  );
+}
 
 function Shell() {
   const queryClient = useQueryClient();
@@ -39,14 +55,17 @@ function Shell() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <Link to="/" className="brand">
-          <span className="brand-mark">
-            <Aperture />
-          </span>
-          <span>
-            Screenshot<span>-a-Day</span>
-          </span>
-        </Link>
+        <div className="brand-lockup">
+          <Link to="/" className="brand">
+            <span className="brand-mark">
+              <Aperture />
+            </span>
+            <span>
+              Screenshot<span>-a-Day</span>
+            </span>
+          </Link>
+          <ArtsLinkCredit />
+        </div>
         <nav>
           <Link to="/">
             <Activity />
@@ -170,12 +189,13 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
             <ArrowRight size={17} />
           </Button>
         </form>
-        <p className="source-note">
-          Open source under AGPL-3.0 ·{" "}
+        <div className="source-note">
+          <ArtsLinkCredit />
+          <span aria-hidden="true"> · </span>
           <a href="https://github.com/arts-link/screenshot-a-day" target="_blank" rel="noreferrer">
-            view source
+            AGPL-3.0 source
           </a>
-        </p>
+        </div>
       </Card>
     </div>
   );
@@ -389,6 +409,10 @@ function ProjectPage() {
     queryFn: () => api.runs(id),
     refetchInterval: 1500,
   });
+  const publicationTargets = useQuery({
+    queryKey: ["publication-targets"],
+    queryFn: api.publicationTargets,
+  });
   const [selected, setSelected] = useState<string[]>([]);
   const [compare, setCompare] = useState<Comparison>();
   const [error, setError] = useState<unknown>();
@@ -449,11 +473,13 @@ function ProjectPage() {
   if (!project.data) return <ErrorNotice error={project.error} />;
   const p = project.data;
   const shareUrl =
-    p.publishMode === "unlisted" && p.shareToken
-      ? `${location.origin}/s/${p.shareToken}`
-      : p.publishMode === "indexable"
-        ? `${location.origin}/p/${p.slug}`
-        : null;
+    p.publishMode !== "private" && p.staticPublication?.active
+      ? p.staticPublication.url
+      : p.publishMode === "unlisted" && p.shareToken
+        ? `${location.origin}/s/${p.shareToken}`
+        : p.publishMode === "indexable"
+          ? `${location.origin}/p/${p.slug}`
+          : null;
   return (
     <>
       <header className="page-head project-header">
@@ -515,6 +541,8 @@ function ProjectPage() {
                 <a href={shareUrl} target="_blank" rel="noreferrer">
                   {shareUrl}
                 </a>
+              ) : p.staticPublication?.removalWarning ? (
+                p.staticPublication.removalWarning
               ) : (
                 "History is visible only to the administrator."
               )}
@@ -536,6 +564,92 @@ function ProjectPage() {
             </button>
           ))}
         </div>
+      </Card>
+      <Card className="static-publication-panel">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">Portable static site</p>
+            <h2>Hugo / Ryder publishing</h2>
+          </div>
+          {p.staticPublication && <Status value={p.staticPublication.state} />}
+        </div>
+        {p.staticPublication ? (
+          <>
+            <p>
+              {p.publishMode === "private"
+                ? "Private projects are omitted from the static site. Target path: "
+                : p.staticPublication.active
+                  ? "Static gallery active at "
+                  : "Built-in gallery remains active until the first successful deployment to "}
+              <a href={p.staticPublication.url} target="_blank" rel="noreferrer">
+                {p.staticPublication.url}
+              </a>
+            </p>
+            {p.staticPublication.removalWarning && (
+              <p className="warning-copy">{p.staticPublication.removalWarning}</p>
+            )}
+            {p.staticPublication.lastError && (
+              <ErrorNotice error={new Error(p.staticPublication.lastError)} />
+            )}
+            <div className="inline-actions">
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  api
+                    .publishTarget(p.staticPublication!.targetId)
+                    .then(() => client.invalidateQueries({ queryKey: ["project", id] }))
+                    .catch(setError)
+                }
+              >
+                Publish now
+              </Button>
+              <Button
+                variant="danger"
+                disabled={p.publishMode !== "private"}
+                title={
+                  p.publishMode !== "private" ? "Switch the project to private first" : undefined
+                }
+                onClick={() =>
+                  api
+                    .detachStaticPublication(id)
+                    .then(() => client.invalidateQueries({ queryKey: ["project", id] }))
+                    .catch(setError)
+                }
+              >
+                Remove and detach
+              </Button>
+            </div>
+          </>
+        ) : publicationTargets.data?.length ? (
+          <form
+            className="inline-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const targetId = String(new FormData(event.currentTarget).get("targetId"));
+              api
+                .attachStaticPublication(id, targetId)
+                .then(() => client.invalidateQueries({ queryKey: ["project", id] }))
+                .catch(setError);
+            }}
+          >
+            <Field label="Static target">
+              <select name="targetId" required>
+                {publicationTargets.data.map((target) => (
+                  <option value={target.id} key={target.id}>
+                    {target.name} · {target.adapter}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Button type="submit">Attach target</Button>
+          </form>
+        ) : (
+          <p>Create a Vercel, Netlify, or SFTP target in Settings first.</p>
+        )}
+        <small>
+          Unlisted galleries rely on URL secrecy, not authentication. Files already downloaded by
+          visitors cannot be recalled.
+        </small>
       </Card>
       <ProjectControls
         project={p}
@@ -1218,7 +1332,10 @@ function PublicGallery() {
         ))}
       </div>
       <footer>
-        Recorded with Screenshot-a-Day · v0.1.0 ·{" "}
+        <span>Recorded with Screenshot-a-Day · v0.1.0</span>
+        <span aria-hidden="true"> · </span>
+        <ArtsLinkCredit />
+        <span aria-hidden="true"> · </span>
         <a href="https://github.com/arts-link/screenshot-a-day" target="_blank" rel="noreferrer">
           AGPL-3.0 source
         </a>
@@ -1227,11 +1344,232 @@ function PublicGallery() {
   );
 }
 
+function PublicationTargetCard({
+  target,
+  onChanged,
+  onError,
+}: {
+  target: PublicationTarget;
+  onChanged: () => void;
+  onError: (error: unknown) => void;
+}) {
+  const history = useQuery({
+    queryKey: ["publication-history", target.id],
+    queryFn: () => api.publicationHistory(target.id),
+  });
+  const [credentialKind, setCredentialKind] = useState<"password" | "private_key">("password");
+  const update = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const scheduleExpression = String(data.get("scheduleExpression") ?? "").trim() || null;
+    api
+      .updatePublicationTarget(target.id, {
+        name: String(data.get("name")),
+        baseUrl: String(data.get("baseUrl")),
+        scheduleMode: String(data.get("scheduleMode")),
+        scheduleExpression,
+        scheduleTimezone: String(data.get("scheduleTimezone")),
+        branding: {
+          ...target.branding,
+          title: String(data.get("title")),
+          description: String(data.get("description")),
+          tagline: String(data.get("tagline")),
+          supplementalFooter: String(data.get("supplementalFooter")),
+          accentColor: String(data.get("accentColor")),
+          backgroundColor: String(data.get("backgroundColor")),
+        },
+      })
+      .then(onChanged)
+      .catch(onError);
+  };
+  const replaceCredential = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const secret = String(data.get("credential"));
+    const input =
+      target.adapter !== "sftp"
+        ? { token: secret }
+        : credentialKind === "password"
+          ? { kind: "password", password: secret }
+          : {
+              kind: "private_key",
+              privateKey: secret,
+              passphrase: String(data.get("passphrase") ?? "") || null,
+            };
+    api
+      .replacePublicationTargetCredentials(target.id, input)
+      .then(() => {
+        form.reset();
+        onChanged();
+      })
+      .catch(onError);
+  };
+  return (
+    <article>
+      <div>
+        <strong>{target.name}</strong>
+        <span>
+          {target.adapter} · {target.projectCount} projects
+        </span>
+      </div>
+      <Status value={target.state} />
+      <a href={target.baseUrl} target="_blank" rel="noreferrer">
+        {target.baseUrl}
+      </a>
+      <span>
+        {target.scheduleMode}
+        {target.nextRunAt ? ` · next ${new Date(target.nextRunAt).toLocaleString()}` : ""}
+      </span>
+      {target.lastVerificationError && (
+        <span className="warning-copy">{target.lastVerificationError}</span>
+      )}
+      <div className="inline-actions">
+        <Button
+          variant="secondary"
+          onClick={() => api.verifyPublicationTarget(target.id).then(onChanged).catch(onError)}
+        >
+          Verify
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={() => api.publishTarget(target.id).then(onChanged).catch(onError)}
+        >
+          Publish now
+        </Button>
+      </div>
+      <details className="target-details">
+        <summary>Configure and view history</summary>
+        <form onSubmit={update} className="form-grid two">
+          <Field label="Name">
+            <input name="name" defaultValue={target.name} required />
+          </Field>
+          <Field label="Base URL">
+            <input name="baseUrl" defaultValue={target.baseUrl} type="url" required />
+          </Field>
+          <Field label="Cadence">
+            <select name="scheduleMode" defaultValue={target.scheduleMode}>
+              <option value="manual">Manual</option>
+              <option value="on_change">On change</option>
+              <option value="hourly">Hourly</option>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="custom">Custom cron</option>
+            </select>
+          </Field>
+          <Field label="Custom cron">
+            <input name="scheduleExpression" defaultValue={target.scheduleExpression ?? ""} />
+          </Field>
+          <Field label="IANA timezone">
+            <input name="scheduleTimezone" defaultValue={target.scheduleTimezone} required />
+          </Field>
+          <Field label="Site title">
+            <input name="title" defaultValue={target.branding.title} required />
+          </Field>
+          <Field label="Description">
+            <input name="description" defaultValue={target.branding.description} />
+          </Field>
+          <Field label="Tagline">
+            <input name="tagline" defaultValue={target.branding.tagline} />
+          </Field>
+          <Field label="Supplemental footer">
+            <input name="supplementalFooter" defaultValue={target.branding.supplementalFooter} />
+          </Field>
+          <Field label="Accent">
+            <input
+              name="accentColor"
+              defaultValue={target.branding.accentColor}
+              pattern="#[0-9A-Fa-f]{6}"
+              required
+            />
+          </Field>
+          <Field label="Background">
+            <input
+              name="backgroundColor"
+              defaultValue={target.branding.backgroundColor}
+              pattern="#[0-9A-Fa-f]{6}"
+              required
+            />
+          </Field>
+          <Button type="submit">Save target</Button>
+        </form>
+        <form onSubmit={replaceCredential} className="credential-form">
+          {target.adapter === "sftp" && (
+            <Field label="Authentication">
+              <select
+                value={credentialKind}
+                onChange={(event) => setCredentialKind(event.target.value as typeof credentialKind)}
+              >
+                <option value="password">Password</option>
+                <option value="private_key">Private key</option>
+              </select>
+            </Field>
+          )}
+          <Field
+            label={
+              credentialKind === "private_key"
+                ? "Private key"
+                : target.adapter === "sftp"
+                  ? "Password"
+                  : "Scoped token"
+            }
+          >
+            {credentialKind === "private_key" ? (
+              <textarea name="credential" required rows={5} />
+            ) : (
+              <input name="credential" type="password" required autoComplete="new-password" />
+            )}
+          </Field>
+          {credentialKind === "private_key" && (
+            <Field label="Passphrase (optional)">
+              <input name="passphrase" type="password" autoComplete="new-password" />
+            </Field>
+          )}
+          <Button type="submit" variant="secondary">
+            Replace credential
+          </Button>
+        </form>
+        <div className="publication-history">
+          <strong>Recent deployments</strong>
+          {history.data?.slice(0, 5).map((job) => (
+            <span key={job.id}>
+              <Status value={job.status} /> {job.operation} ·{" "}
+              {new Date(job.createdAt).toLocaleString()}
+              {job.error ? ` · ${job.error}` : ""}
+            </span>
+          ))}
+        </div>
+        <Button
+          variant="danger"
+          disabled={target.projectCount > 0}
+          title={target.projectCount ? "Detach every project first" : undefined}
+          onClick={() => api.deletePublicationTarget(target.id).then(onChanged).catch(onError)}
+        >
+          Delete target
+        </Button>
+      </details>
+    </article>
+  );
+}
+
 function Settings() {
   const tokens = useQuery({ queryKey: ["tokens"], queryFn: api.tokens });
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
+  const publicationStatus = useQuery({
+    queryKey: ["publication-status"],
+    queryFn: api.publicationStatus,
+  });
+  const publicationTargets = useQuery({
+    queryKey: ["publication-targets"],
+    queryFn: api.publicationTargets,
+    refetchInterval: 5000,
+  });
   const [revealed, setRevealed] = useState<string>();
   const [error, setError] = useState<unknown>();
+  const [adapter, setAdapter] = useState<"vercel" | "netlify" | "sftp">("vercel");
+  const [sftpCredentialKind, setSftpCredentialKind] = useState<"password" | "private_key">(
+    "password",
+  );
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -1244,6 +1582,60 @@ function Settings() {
       setRevealed(result.token);
       await tokens.refetch();
       event.currentTarget.reset();
+    } catch (caught) {
+      setError(caught);
+    }
+  };
+  const createPublicationTarget = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const value = (name: string) => String(data.get(name) ?? "").trim();
+    const config =
+      adapter === "vercel"
+        ? { projectId: value("projectId"), teamId: value("teamId") || null }
+        : adapter === "netlify"
+          ? { siteId: value("siteId") }
+          : {
+              host: value("host"),
+              port: Number(value("port") || 22),
+              root: value("root"),
+              username: value("username"),
+              hostKeySha256: value("hostKeySha256"),
+            };
+    const credentials =
+      adapter === "sftp"
+        ? sftpCredentialKind === "password"
+          ? { kind: "password", password: value("credential") }
+          : {
+              kind: "private_key",
+              privateKey: value("credential"),
+              passphrase: value("passphrase") || null,
+            }
+        : { token: value("credential") };
+    try {
+      await api.createPublicationTarget({
+        name: value("name"),
+        baseUrl: value("baseUrl"),
+        scheduleMode: value("scheduleMode"),
+        scheduleExpression: value("scheduleExpression") || null,
+        scheduleTimezone: value("scheduleTimezone") || "UTC",
+        branding: {
+          title: value("title"),
+          description: value("description"),
+          logoText: value("logoText") || null,
+          logoUrl: null,
+          tagline: value("tagline"),
+          accentColor: value("accentColor") || "#dbff53",
+          backgroundColor: value("backgroundColor") || "#10151d",
+          darkMode: true,
+          supplementalFooter: value("supplementalFooter"),
+          analytics: { provider: "none" },
+        },
+        target: { adapter, config, credentials },
+      });
+      form.reset();
+      await publicationTargets.refetch();
     } catch (caught) {
       setError(caught);
     }
@@ -1272,6 +1664,162 @@ function Settings() {
         </div>
       )}
       <div className="settings-grid">
+        <Card className="publication-settings-card">
+          <Globe2 />
+          <h2>Static publication targets</h2>
+          <p>
+            Hugo Extended 0.146.2 and Ryder 0.4.1 render one portable site per target. The home
+            server only makes outbound connections.
+          </p>
+          {publicationStatus.data && !publicationStatus.data.available && (
+            <ErrorNotice
+              error={new Error(publicationStatus.data.error ?? "Static renderer unavailable")}
+            />
+          )}
+          <div className="target-list">
+            {publicationTargets.data?.map((target) => (
+              <PublicationTargetCard
+                key={target.id}
+                target={target}
+                onChanged={() => void publicationTargets.refetch()}
+                onError={setError}
+              />
+            ))}
+          </div>
+          <form className="target-form" onSubmit={createPublicationTarget}>
+            <div className="form-grid two">
+              <Field label="Target name">
+                <input name="name" required placeholder="Public galleries" />
+              </Field>
+              <Field label="Adapter">
+                <select
+                  name="adapter"
+                  value={adapter}
+                  onChange={(event) => setAdapter(event.target.value as typeof adapter)}
+                >
+                  <option value="vercel">Vercel</option>
+                  <option value="netlify">Netlify</option>
+                  <option value="sftp">SFTP</option>
+                </select>
+              </Field>
+              <Field label="Canonical base URL">
+                <input
+                  name="baseUrl"
+                  type="url"
+                  required
+                  placeholder="https://history.example.com"
+                />
+              </Field>
+              <Field label="Site title">
+                <input name="title" required placeholder="Visual history" />
+              </Field>
+              <Field label="Description">
+                <input name="description" placeholder="A record of our sites" />
+              </Field>
+              <Field label="Tagline">
+                <input name="tagline" placeholder="Captured over time" />
+              </Field>
+              {adapter === "vercel" && (
+                <>
+                  <Field label="Existing project ID/name">
+                    <input name="projectId" required />
+                  </Field>
+                  <Field label="Team ID (optional)">
+                    <input name="teamId" />
+                  </Field>
+                </>
+              )}
+              {adapter === "netlify" && (
+                <Field label="Existing site ID">
+                  <input name="siteId" required />
+                </Field>
+              )}
+              {adapter === "sftp" && (
+                <>
+                  <Field label="Host">
+                    <input name="host" required />
+                  </Field>
+                  <Field label="Port">
+                    <input name="port" type="number" defaultValue="22" required />
+                  </Field>
+                  <Field label="Dedicated root">
+                    <input name="root" required placeholder="/srv/www/history" />
+                  </Field>
+                  <Field label="Username">
+                    <input name="username" required />
+                  </Field>
+                  <Field label="Host key SHA-256">
+                    <input name="hostKeySha256" required placeholder="SHA256:…" />
+                  </Field>
+                </>
+              )}
+              {adapter === "sftp" && (
+                <Field label="SFTP authentication">
+                  <select
+                    value={sftpCredentialKind}
+                    onChange={(event) =>
+                      setSftpCredentialKind(event.target.value as typeof sftpCredentialKind)
+                    }
+                  >
+                    <option value="password">Password</option>
+                    <option value="private_key">Private key</option>
+                  </select>
+                </Field>
+              )}
+              <Field
+                label={
+                  adapter === "sftp" && sftpCredentialKind === "private_key"
+                    ? "Private key"
+                    : adapter === "sftp"
+                      ? "Password"
+                      : "Scoped access token"
+                }
+                hint="Encrypted at rest and write-only after save"
+              >
+                {adapter === "sftp" && sftpCredentialKind === "private_key" ? (
+                  <textarea name="credential" rows={5} required />
+                ) : (
+                  <input name="credential" type="password" required autoComplete="new-password" />
+                )}
+              </Field>
+              {adapter === "sftp" && sftpCredentialKind === "private_key" && (
+                <Field label="Private-key passphrase (optional)">
+                  <input name="passphrase" type="password" autoComplete="new-password" />
+                </Field>
+              )}
+              <Field label="Cadence">
+                <select name="scheduleMode" defaultValue="manual">
+                  <option value="manual">Manual</option>
+                  <option value="on_change">On change</option>
+                  <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="custom">Custom cron</option>
+                </select>
+              </Field>
+              <Field label="Custom cron">
+                <input name="scheduleExpression" placeholder="0 4 * * *" />
+              </Field>
+              <Field label="IANA timezone">
+                <input name="scheduleTimezone" defaultValue="UTC" required />
+              </Field>
+              <Field label="Accent">
+                <input name="accentColor" defaultValue="#dbff53" pattern="#[0-9A-Fa-f]{6}" />
+              </Field>
+              <Field label="Background">
+                <input name="backgroundColor" defaultValue="#10151d" pattern="#[0-9A-Fa-f]{6}" />
+              </Field>
+              <Field label="Supplemental footer">
+                <input name="supplementalFooter" placeholder="Your organization" />
+              </Field>
+            </div>
+            <p className="field-note">
+              Ryder theme, Arts-Link, and Screenshot-a-Day source attribution is permanent on every
+              generated page.
+            </p>
+            <Button type="submit">Create target</Button>
+          </form>
+        </Card>
         <Card>
           <KeyRound />
           <h2>API access</h2>

@@ -46,17 +46,13 @@ export function Empty({ title, children }: PropsWithChildren<{ title: string }>)
   );
 }
 export function Status({ value }: { value: string }) {
-  const good = value === "succeeded" || value === "ready";
+  const good = ["succeeded", "ready", "active", "published"].includes(value);
+  const bad = value === "failed" || value === "removal_failed";
   return (
-    <span
-      className={clsx(
-        "status",
-        good ? "status-good" : value === "failed" ? "status-bad" : "status-wait",
-      )}
-    >
+    <span className={clsx("status", good ? "status-good" : bad ? "status-bad" : "status-wait")}>
       {good ? (
         <CheckCircle2 size={13} />
-      ) : value === "failed" ? (
+      ) : bad ? (
         <AlertTriangle size={13} />
       ) : (
         <LoaderCircle size={13} />

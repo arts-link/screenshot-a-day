@@ -1,0 +1,13 @@
+{{ $analytics := site.Params.analytics }} {{ if eq $analytics.provider "plausible" }}
+<script
+  defer
+  data-domain="{{ $analytics.domain }}"
+  src="https://plausible.io/js/script.js"
+></script>
+{{ end }} {{ if eq $analytics.provider "posthog" }}
+<script
+  defer
+  src="{{ $analytics.host }}/static/array.js"
+  data-api-key="{{ $analytics.apiKey }}"
+></script>
+{{ end }}

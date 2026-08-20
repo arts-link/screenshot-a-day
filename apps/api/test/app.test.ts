@@ -33,6 +33,10 @@ describe("control plane", () => {
       privateTargetAllowlist: ["localhost"],
       trustProxy: false,
       buildCommit: "test-commit",
+      hugoPath: "hugo",
+      ryderPath: "/Volumes/wanderer/dev/solo/ryder",
+      publicationBuildTimeoutMs: 30_000,
+      publicationDeployTimeoutMs: 30_000,
       logLevel: "silent",
     };
     blobs = new LocalBlobStore(join(directory, "blobs"));
@@ -77,6 +81,38 @@ describe("control plane", () => {
     });
   }
 
+  async function createVercelTarget(name = "Static history") {
+    return app.inject({
+      method: "POST",
+      url: "/api/v1/publication-targets",
+      headers: { cookie: `sad_session=${sessionToken}` },
+      payload: {
+        name,
+        baseUrl: "https://history.example.com",
+        scheduleMode: "manual",
+        scheduleExpression: null,
+        scheduleTimezone: "UTC",
+        branding: {
+          title: "Visual history",
+          description: "Retained screenshots",
+          logoText: "History",
+          logoUrl: null,
+          tagline: "Recorded over time",
+          accentColor: "#dbff53",
+          backgroundColor: "#10151d",
+          darkMode: true,
+          supplementalFooter: "Example studio",
+          analytics: { provider: "none" },
+        },
+        target: {
+          adapter: "vercel",
+          config: { projectId: "prj_fixture", teamId: null },
+          credentials: { token: "vercel-secret-token" },
+        },
+      },
+    });
+  }
+
   it("reports health and exact version information", async () => {
     expect((await app.inject({ url: "/health/ready" })).statusCode).toBe(200);
     expect((await app.inject({ url: "/version" })).json()).toEqual({
@@ -84,6 +120,86 @@ describe("control plane", () => {
       commit: "test-commit",
       apiVersion: "v1",
     });
+  });
+
+  it("applies forward migration 2 and never returns publication credentials", async () => {
+    expect(db.raw.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
+      { version: 1 },
+      { version: 2 },
+    ]);
+    const created = await createVercelTarget();
+    expect(created.statusCode).toBe(201);
+    expect(created.body).not.toContain("vercel-secret-token");
+    expect(created.json()).toMatchObject({
+      adapter: "vercel",
+      renderer: "hugo-ryder",
+      credentialConfigured: true,
+      state: "published",
+    });
+    expect(
+      db.getPublicationTarget(created.json<{ id: string }>().id)?.credentials_encrypted,
+    ).not.toContain("vercel-secret-token");
+  });
+
+  it("keeps the built-in gallery as fallback until static handoff and reports pending removals", async () => {
+    const projectResponse = await createFixtureProject("static-handoff");
+    const project = projectResponse.json<{ id: string }>();
+    const cookie = `sad_session=${sessionToken}`;
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "indexable" },
+    });
+    const target = (await createVercelTarget()).json<{ id: string }>();
+    const attached = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+      payload: { targetId: target.id },
+    });
+    expect(attached.statusCode).toBe(201);
+    expect(attached.json()).toMatchObject({ state: "pending", active: false });
+    expect((await app.inject({ url: "/api/public/p/static-handoff" })).statusCode).toBe(200);
+
+    db.enqueuePublication(target.id);
+    const job = db.claimPublicationJob()!;
+    db.completePublicationJob(job, {
+      deploymentId: "dpl_fixture",
+      deploymentUrl: "https://history.example.com",
+      manifest: { files: [] },
+    });
+    expect((await app.inject({ url: "/api/public/p/static-handoff" })).statusCode).toBe(404);
+    const detail = await app.inject({
+      url: `/api/v1/projects/${project.id}`,
+      headers: { cookie },
+    });
+    expect(detail.json()).toMatchObject({
+      staticPublication: {
+        active: true,
+        url: "https://history.example.com/p/static-handoff/",
+      },
+    });
+
+    const privateResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "private" },
+    });
+    expect(privateResponse.json()).toMatchObject({
+      staticPublication: { state: "removal_pending" },
+    });
+    expect(db.listPublicationJobs(target.id, 1)[0]).toMatchObject({
+      operation: "remove",
+      status: "queued",
+    });
+    const detached = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+    });
+    expect(detached.statusCode).toBe(202);
   });
 
   it("creates a project, leases its capture, and records a failure", async () => {
