@@ -6,6 +6,9 @@ import { AppDatabase } from "../src/database.js";
 import { HugoRyderRenderer } from "../src/publication-renderer.js";
 import { LocalBlobStore } from "../src/storage.js";
 
+const hugoPath = process.env.SAD_TEST_HUGO_PATH ?? "hugo";
+const ryderPath = process.env.SAD_TEST_RYDER_PATH ?? "/Volumes/wanderer/dev/solo/ryder";
+
 function emptyProjectInput(
   name: string,
   slug: string,
@@ -149,8 +152,8 @@ describe("Hugo Ryder publication renderer", () => {
     const renderer = new HugoRyderRenderer({
       db,
       blobs,
-      hugoPath: "hugo",
-      ryderPath: "/Volumes/wanderer/dev/solo/ryder",
+      hugoPath,
+      ryderPath,
       templatePath: join(process.cwd(), "apps/api/static-gallery"),
       timeoutMs: 30_000,
     });
@@ -240,8 +243,8 @@ describe("Hugo Ryder publication renderer", () => {
     const renderer = new HugoRyderRenderer({
       db,
       blobs,
-      hugoPath: "hugo",
-      ryderPath: "/Volumes/wanderer/dev/solo/ryder",
+      hugoPath,
+      ryderPath,
       templatePath: join(process.cwd(), "apps/api/static-gallery"),
       timeoutMs: 30_000,
     });
