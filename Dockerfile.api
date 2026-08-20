@@ -1,4 +1,11 @@
 # syntax=docker/dockerfile:1.7
+FROM ghcr.io/gohugoio/hugo:v0.146.2 AS hugo
+
+FROM alpine/git:2.49.1 AS ryder
+RUN git clone https://github.com/arts-link/ryder.git /ryder && \
+    cd /ryder && git checkout --detach 309cd9c6bbd37950c94acdd3f07438e2036d76fb && \
+    rm -rf /ryder/.git /ryder/node_modules /ryder/exampleSite/node_modules
+
 FROM node:24-bookworm-slim AS build
 WORKDIR /app
 RUN corepack enable
@@ -25,6 +32,12 @@ WORKDIR /app
 COPY --from=build /out ./
 COPY --from=build /app/apps/api/dist ./dist
 COPY --from=build /app/apps/web/dist /web/dist
+COPY --from=build /app/apps/api/static-gallery ./static-gallery
+COPY --from=hugo /usr/bin/hugo /usr/local/bin/hugo
+COPY --from=hugo /lib/ld-musl-*.so.1 /lib/
+COPY --from=hugo /usr/lib/libgcc_s.so.1 /usr/lib/
+COPY --from=hugo /usr/lib/libstdc++.so.6* /usr/lib/
+COPY --from=ryder /ryder /opt/sad/ryder
 RUN mkdir /data && chown -R node:node /app /data
 USER node
 EXPOSE 4400

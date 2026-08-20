@@ -19,6 +19,53 @@ export interface ProjectDetail extends ProjectSummary {
   scheduleTimezone: string;
   retentionDays: number | null;
   retentionCount: number | null;
+  staticPublication: StaticPublication | null;
+}
+export interface StaticPublication {
+  targetId: string;
+  url: string;
+  state: "pending" | "active" | "removal_pending" | "removal_failed";
+  pending: boolean;
+  active: boolean;
+  lastPublishedAt: string | null;
+  lastSuccessfulRevision: number;
+  lastError: string | null;
+  removalWarning: string | null;
+}
+export interface PublicationTarget {
+  id: string;
+  name: string;
+  adapter: "vercel" | "netlify" | "sftp";
+  renderer: "hugo-ryder";
+  baseUrl: string;
+  branding: {
+    title: string;
+    description: string;
+    logoText: string | null;
+    logoUrl: string | null;
+    tagline: string;
+    accentColor: string;
+    backgroundColor: string;
+    darkMode: boolean;
+    supplementalFooter: string;
+    analytics:
+      | { provider: "none" }
+      | { provider: "plausible"; domain: string }
+      | { provider: "posthog"; apiKey: string; host: string };
+  };
+  scheduleMode: "manual" | "on_change" | "hourly" | "daily" | "weekly" | "custom";
+  scheduleExpression: string | null;
+  scheduleTimezone: string;
+  adapterConfig: Record<string, unknown>;
+  credentialConfigured: boolean;
+  dirtyRevision: number;
+  publishedRevision: number;
+  nextRunAt: string | null;
+  lastVerifiedAt: string | null;
+  lastVerificationError: string | null;
+  state: string;
+  projectCount: number;
+  createdAt: string;
 }
 export interface PublicGallery {
   project: { id: string; name: string; slug: string; publishMode: string; profiles: Profile[] };
@@ -72,6 +119,52 @@ export const api = {
     request<{ publishMode: string; shareToken: string | null }>(
       `/api/v1/projects/${id}/publication`,
       { method: "PATCH", body: JSON.stringify({ publishMode, rotate }) },
+    ),
+  publicationStatus: () =>
+    request<{ available: boolean; error: string | null }>("/api/v1/publication/status"),
+  publicationTargets: () => request<PublicationTarget[]>("/api/v1/publication-targets"),
+  createPublicationTarget: (input: unknown) =>
+    request<PublicationTarget>("/api/v1/publication-targets", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+  updatePublicationTarget: (id: string, input: unknown) =>
+    request<PublicationTarget>(`/api/v1/publication-targets/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  replacePublicationTargetCredentials: (id: string, input: unknown) =>
+    request(`/api/v1/publication-targets/${id}/credentials`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    }),
+  deletePublicationTarget: (id: string) =>
+    request(`/api/v1/publication-targets/${id}`, { method: "DELETE" }),
+  verifyPublicationTarget: (id: string) =>
+    request<{ verified: boolean; verifiedAt: string }>(`/api/v1/publication-targets/${id}/verify`, {
+      method: "POST",
+    }),
+  publishTarget: (id: string) =>
+    request<{ jobId: string }>(`/api/v1/publication-targets/${id}/publish`, { method: "POST" }),
+  publicationHistory: (id: string) =>
+    request<
+      Array<{
+        id: string;
+        status: string;
+        operation: string;
+        error: string | null;
+        createdAt: string;
+      }>
+    >(`/api/v1/publication-targets/${id}/history`),
+  attachStaticPublication: (projectId: string, targetId: string) =>
+    request<StaticPublication>(`/api/v1/projects/${projectId}/static-publication`, {
+      method: "PUT",
+      body: JSON.stringify({ targetId }),
+    }),
+  detachStaticPublication: (projectId: string) =>
+    request<{ state: string; warning: string }>(
+      `/api/v1/projects/${projectId}/static-publication`,
+      { method: "DELETE" },
     ),
   compare: (firstId: string, secondId: string) =>
     request<Comparison>("/api/v1/comparisons", {

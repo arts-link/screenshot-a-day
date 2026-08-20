@@ -1,0 +1,35 @@
+{{ define "main" }} {{ $gallery := index site.Data.gallery_by_key .Params.gallery_key }}
+<section class="hero compact">
+  <p class="eyebrow"><span>{{ $gallery.mode }}</span> · Visual history</p>
+  <h1>{{ $gallery.name }}</h1>
+  <p class="hero-intro">
+    {{ $gallery.capture_count }} retained captures. Updated {{ time.Format "January 2, 2006 15:04 MST" $gallery.updated_at }}.
+  </p>
+</section>
+<section class="gallery-section">
+  <div class="section-heading"><p class="eyebrow">Capture profiles</p><span>{{ $gallery.profile_count }} browser views</span></div>
+  <div class="profile-grid">
+  {{ range $index, $profile := $gallery.profiles }}
+  <article class="profile-card">
+    {{ with .latest_thumbnail }}<a class="card-media" href="{{ $profile.path }}"
+      ><img
+        loading="lazy"
+        src="/{{ . }}"
+        alt="Latest {{ $gallery.name }} capture for {{ $profile.name }}" /></a
+    >{{ end }}
+    <div class="card-body">
+      <div class="card-meta"><span>{{ printf "%02d" (add $index 1) }} / Profile</span><span>{{ .browser }}</span></div>
+      <h2><a href="{{ .path }}">{{ .name }}</a></h2>
+      <p>{{ .capture_count }} retained frames</p>
+      <div class="card-actions">
+        <a class="card-link" href="{{ .path }}">View captures <span aria-hidden="true">→</span></a>
+        <div class="animation-links">
+          {{ with .gif }}<a href="/{{ . }}">GIF</a>{{ end }} {{ with .webm }}<a href="/{{ . }}">WebM</a>{{ end }}
+        </div>
+      </div>
+    </div>
+  </article>
+  {{ end }}
+  </div>
+</section>
+{{ end }}

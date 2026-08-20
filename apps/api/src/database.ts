@@ -1,6 +1,14 @@
 import DatabaseConstructor from "better-sqlite3";
 import { randomUUID } from "node:crypto";
-import type { CaptureProfileInput, ProjectInput, ProjectSummary } from "@sad/contracts";
+import type {
+  CaptureProfileInput,
+  ProjectInput,
+  ProjectSummary,
+  PublicationAdapter,
+  PublicationBranding,
+  PublicationScheduleMode,
+  PublicationTargetInput,
+} from "@sad/contracts";
 import { randomToken } from "@sad/core";
 
 type Sqlite = InstanceType<typeof DatabaseConstructor>;
@@ -108,7 +116,66 @@ export interface ExportRow {
   updated_at: string;
 }
 
-const MIGRATION = `
+export interface PublicationTargetRow {
+  id: string;
+  name: string;
+  adapter: PublicationAdapter;
+  renderer: "hugo-ryder";
+  base_url: string;
+  branding_json: string;
+  schedule_mode: PublicationScheduleMode;
+  schedule_expression: string | null;
+  schedule_timezone: string;
+  adapter_config_json: string;
+  credentials_encrypted: string;
+  dirty_revision: number;
+  published_revision: number;
+  next_run_at: string | null;
+  last_verified_at: string | null;
+  last_verification_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface ProjectPublicationRow {
+  project_id: string;
+  target_id: string;
+  state: "pending" | "active" | "removal_pending" | "removal_failed";
+  detach_after_removal: number;
+  gallery_url: string;
+  last_successful_revision: number;
+  last_published_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface PublicationJobRow {
+  id: string;
+  target_id: string;
+  status: "queued" | "building" | "deploying" | "succeeded" | "failed";
+  operation: "publish" | "remove";
+  desired_revision: number;
+  attempts: number;
+  max_attempts: number;
+  available_at: string;
+  lease_token: string | null;
+  lease_expires_at: string | null;
+  deployment_id: string | null;
+  deployment_url: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface PublicationManifestRow {
+  id: string;
+  target_id: string;
+  revision: number;
+  deployment_id: string | null;
+  deployment_url: string;
+  manifest_json: string;
+  created_at: string;
+}
+
+const MIGRATION_1 = `
 CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -170,6 +237,41 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 `;
 
+const MIGRATION_2 = `
+CREATE TABLE publication_targets (
+  id TEXT PRIMARY KEY, name TEXT NOT NULL, adapter TEXT NOT NULL CHECK (adapter IN ('vercel','netlify','sftp')),
+  renderer TEXT NOT NULL DEFAULT 'hugo-ryder' CHECK (renderer='hugo-ryder'), base_url TEXT NOT NULL,
+  branding_json TEXT NOT NULL, schedule_mode TEXT NOT NULL CHECK (schedule_mode IN ('manual','on_change','hourly','daily','weekly','custom')),
+  schedule_expression TEXT, schedule_timezone TEXT NOT NULL, adapter_config_json TEXT NOT NULL,
+  credentials_encrypted TEXT NOT NULL, dirty_revision INTEGER NOT NULL DEFAULT 0, published_revision INTEGER NOT NULL DEFAULT 0,
+  next_run_at TEXT, last_verified_at TEXT, last_verification_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE project_publications (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE RESTRICT,
+  target_id TEXT NOT NULL REFERENCES publication_targets(id) ON DELETE RESTRICT,
+  state TEXT NOT NULL CHECK (state IN ('pending','active','removal_pending','removal_failed')),
+  gallery_url TEXT NOT NULL, detach_after_removal INTEGER NOT NULL DEFAULT 0, last_successful_revision INTEGER NOT NULL DEFAULT 0,
+  last_published_at TEXT, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX project_publications_target_idx ON project_publications(target_id);
+CREATE TABLE publication_jobs (
+  id TEXT PRIMARY KEY, target_id TEXT NOT NULL REFERENCES publication_targets(id) ON DELETE CASCADE,
+  status TEXT NOT NULL CHECK (status IN ('queued','building','deploying','succeeded','failed')),
+  operation TEXT NOT NULL CHECK (operation IN ('publish','remove')), desired_revision INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 5, available_at TEXT NOT NULL,
+  lease_token TEXT, lease_expires_at TEXT, deployment_id TEXT, deployment_url TEXT, error TEXT,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE INDEX publication_jobs_claim_idx ON publication_jobs(status,available_at,lease_expires_at);
+CREATE UNIQUE INDEX publication_jobs_one_queued_target_idx ON publication_jobs(target_id) WHERE status='queued';
+CREATE TABLE publication_manifests (
+  id TEXT PRIMARY KEY, target_id TEXT NOT NULL REFERENCES publication_targets(id) ON DELETE CASCADE,
+  revision INTEGER NOT NULL, deployment_id TEXT, deployment_url TEXT NOT NULL,
+  manifest_json TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX publication_manifests_target_idx ON publication_manifests(target_id,created_at DESC);
+`;
+
 export class AppDatabase {
   readonly raw: Sqlite;
 
@@ -182,10 +284,19 @@ export class AppDatabase {
   }
 
   migrate(): void {
-    this.raw.exec(MIGRATION);
-    this.raw
-      .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, ?)")
-      .run(new Date().toISOString());
+    this.raw.exec(MIGRATION_1);
+    const apply = this.raw.transaction((version: number, sql: string) => {
+      const present = this.raw
+        .prepare("SELECT 1 FROM schema_migrations WHERE version=?")
+        .get(version);
+      if (present) return;
+      this.raw.exec(sql);
+      this.raw
+        .prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+        .run(version, new Date().toISOString());
+    });
+    apply(1, "");
+    apply(2, MIGRATION_2);
   }
 
   close(): void {
@@ -376,8 +487,10 @@ export class AppDatabase {
     return this.raw
       .prepare(
         kind === "slug"
-          ? "SELECT * FROM projects WHERE slug=? AND publish_mode='indexable'"
-          : "SELECT * FROM projects WHERE share_token=? AND publish_mode='unlisted'",
+          ? `SELECT * FROM projects p WHERE slug=? AND publish_mode='indexable'
+            AND NOT EXISTS (SELECT 1 FROM project_publications pp WHERE pp.project_id=p.id AND pp.state='active')`
+          : `SELECT * FROM projects p WHERE share_token=? AND publish_mode='unlisted'
+            AND NOT EXISTS (SELECT 1 FROM project_publications pp WHERE pp.project_id=p.id AND pp.state='active')`,
       )
       .get(value) as ProjectRow | undefined;
   }
@@ -397,6 +510,16 @@ export class AppDatabase {
     this.raw
       .prepare("UPDATE projects SET publish_mode=?,share_token=?,updated_at=? WHERE id=?")
       .run(publishMode, token, new Date().toISOString(), id);
+    const publication = this.getProjectPublication(id);
+    if (publication) {
+      const target = this.getPublicationTarget(publication.target_id);
+      if (target) {
+        const path = publishMode === "unlisted" ? `/s/${token}/` : `/p/${current.slug}/`;
+        this.raw
+          .prepare("UPDATE project_publications SET gallery_url=?,updated_at=? WHERE project_id=?")
+          .run(`${target.base_url}${path}`, new Date().toISOString(), id);
+      }
+    }
     return this.getProject(id);
   }
   deleteProject(id: string): boolean {
@@ -860,6 +983,439 @@ export class AppDatabase {
     return this.raw
       .prepare("SELECT * FROM exports WHERE profile_id=? AND format=?")
       .get(profileId, format) as ExportRow | undefined;
+  }
+
+  createPublicationTarget(
+    input: PublicationTargetInput,
+    credentialsEncrypted: string,
+    nextRunAt: string | null,
+  ): PublicationTargetRow {
+    const now = new Date().toISOString();
+    const row: PublicationTargetRow = {
+      id: randomUUID(),
+      name: input.name,
+      adapter: input.target.adapter,
+      renderer: "hugo-ryder",
+      base_url: input.baseUrl,
+      branding_json: JSON.stringify(input.branding),
+      schedule_mode: input.scheduleMode,
+      schedule_expression: input.scheduleExpression,
+      schedule_timezone: input.scheduleTimezone,
+      adapter_config_json: JSON.stringify(input.target.config),
+      credentials_encrypted: credentialsEncrypted,
+      dirty_revision: 0,
+      published_revision: 0,
+      next_run_at: nextRunAt,
+      last_verified_at: null,
+      last_verification_error: null,
+      created_at: now,
+      updated_at: now,
+    };
+    this.raw
+      .prepare(
+        `INSERT INTO publication_targets(id,name,adapter,renderer,base_url,branding_json,schedule_mode,schedule_expression,schedule_timezone,adapter_config_json,credentials_encrypted,dirty_revision,published_revision,next_run_at,last_verified_at,last_verification_error,created_at,updated_at)
+        VALUES (@id,@name,@adapter,@renderer,@base_url,@branding_json,@schedule_mode,@schedule_expression,@schedule_timezone,@adapter_config_json,@credentials_encrypted,@dirty_revision,@published_revision,@next_run_at,@last_verified_at,@last_verification_error,@created_at,@updated_at)`,
+      )
+      .run(row);
+    return row;
+  }
+
+  listPublicationTargets(): PublicationTargetRow[] {
+    return this.raw
+      .prepare("SELECT * FROM publication_targets ORDER BY created_at")
+      .all() as PublicationTargetRow[];
+  }
+
+  getPublicationTarget(id: string): PublicationTargetRow | undefined {
+    return this.raw.prepare("SELECT * FROM publication_targets WHERE id=?").get(id) as
+      PublicationTargetRow | undefined;
+  }
+
+  updatePublicationTarget(
+    id: string,
+    input: {
+      name?: string | undefined;
+      baseUrl?: string | undefined;
+      branding?: PublicationBranding | undefined;
+      scheduleMode?: PublicationScheduleMode | undefined;
+      scheduleExpression?: string | null | undefined;
+      scheduleTimezone?: string | undefined;
+      adapter?: PublicationAdapter | undefined;
+      adapterConfig?: unknown;
+      nextRunAt?: string | null | undefined;
+    },
+  ): PublicationTargetRow | undefined {
+    const current = this.getPublicationTarget(id);
+    if (!current) return undefined;
+    const now = new Date().toISOString();
+    this.raw
+      .prepare(
+        `UPDATE publication_targets SET name=?,base_url=?,branding_json=?,schedule_mode=?,schedule_expression=?,
+        schedule_timezone=?,adapter=?,adapter_config_json=?,next_run_at=?,dirty_revision=dirty_revision+1,updated_at=? WHERE id=?`,
+      )
+      .run(
+        input.name ?? current.name,
+        input.baseUrl ?? current.base_url,
+        input.branding ? JSON.stringify(input.branding) : current.branding_json,
+        input.scheduleMode ?? current.schedule_mode,
+        input.scheduleExpression === undefined
+          ? current.schedule_expression
+          : input.scheduleExpression,
+        input.scheduleTimezone ?? current.schedule_timezone,
+        input.adapter ?? current.adapter,
+        input.adapterConfig === undefined
+          ? current.adapter_config_json
+          : JSON.stringify(input.adapterConfig),
+        input.nextRunAt === undefined ? current.next_run_at : input.nextRunAt,
+        now,
+        id,
+      );
+    if (input.baseUrl) {
+      for (const publication of this.listTargetProjectPublications(id)) {
+        const project = this.getProject(publication.project_id);
+        if (!project) continue;
+        const path =
+          project.publish_mode === "unlisted"
+            ? `/s/${project.share_token}/`
+            : `/p/${project.slug}/`;
+        this.raw
+          .prepare("UPDATE project_publications SET gallery_url=?,updated_at=? WHERE project_id=?")
+          .run(`${input.baseUrl}${path}`, now, project.id);
+      }
+    }
+    if ((input.scheduleMode ?? current.schedule_mode) === "on_change")
+      this.enqueuePublication(id, "publish", false, new Date(Date.now() + 60_000).toISOString());
+    return this.getPublicationTarget(id);
+  }
+
+  replacePublicationCredentials(id: string, credentialsEncrypted: string): boolean {
+    return (
+      this.raw
+        .prepare(
+          "UPDATE publication_targets SET credentials_encrypted=?,last_verified_at=NULL,last_verification_error=NULL,updated_at=? WHERE id=?",
+        )
+        .run(credentialsEncrypted, new Date().toISOString(), id).changes === 1
+    );
+  }
+
+  recordPublicationVerification(id: string, error: string | null): void {
+    this.raw
+      .prepare(
+        "UPDATE publication_targets SET last_verified_at=?,last_verification_error=?,updated_at=? WHERE id=?",
+      )
+      .run(new Date().toISOString(), error, new Date().toISOString(), id);
+  }
+
+  deletePublicationTarget(id: string): boolean {
+    const linked = this.raw
+      .prepare("SELECT 1 FROM project_publications WHERE target_id=? LIMIT 1")
+      .get(id);
+    if (linked) throw new Error("Detach every project before deleting this target");
+    return this.raw.prepare("DELETE FROM publication_targets WHERE id=?").run(id).changes === 1;
+  }
+
+  getProjectPublication(projectId: string): ProjectPublicationRow | undefined {
+    return this.raw
+      .prepare("SELECT * FROM project_publications WHERE project_id=?")
+      .get(projectId) as ProjectPublicationRow | undefined;
+  }
+
+  listTargetProjectPublications(targetId: string): ProjectPublicationRow[] {
+    return this.raw
+      .prepare("SELECT * FROM project_publications WHERE target_id=? ORDER BY created_at")
+      .all(targetId) as ProjectPublicationRow[];
+  }
+
+  attachProjectToTarget(projectId: string, targetId: string): ProjectPublicationRow {
+    const project = this.getProject(projectId);
+    const target = this.getPublicationTarget(targetId);
+    if (!project || !target) throw new Error("Project or publication target not found");
+    if (this.getProjectPublication(projectId))
+      throw new Error("Project already has a static target");
+    const now = new Date().toISOString();
+    const path =
+      project.publish_mode === "unlisted" ? `/s/${project.share_token}/` : `/p/${project.slug}/`;
+    this.raw.transaction(() => {
+      this.raw
+        .prepare(
+          `INSERT INTO project_publications(project_id,target_id,state,gallery_url,detach_after_removal,last_successful_revision,last_published_at,last_error,created_at,updated_at)
+          VALUES (?,?,'pending',?,0,0,NULL,NULL,?,?)`,
+        )
+        .run(projectId, targetId, `${target.base_url}${path}`, now, now);
+      this.markPublicationTargetDirty(targetId, project.publish_mode === "private");
+    })();
+    return this.getProjectPublication(projectId)!;
+  }
+
+  requestProjectDetachment(projectId: string): ProjectPublicationRow | undefined {
+    const project = this.getProject(projectId);
+    const publication = this.getProjectPublication(projectId);
+    if (!project || !publication) return undefined;
+    if (project.publish_mode !== "private")
+      throw new Error("A project must be private before it can be detached");
+    this.raw.transaction(() => {
+      this.raw
+        .prepare(
+          "UPDATE project_publications SET state='removal_pending',detach_after_removal=1,last_error=NULL,updated_at=? WHERE project_id=?",
+        )
+        .run(new Date().toISOString(), projectId);
+      this.markPublicationTargetDirty(publication.target_id, true, "remove");
+    })();
+    return this.getProjectPublication(projectId);
+  }
+
+  requestProjectPublicationRemoval(
+    projectId: string,
+    detach = false,
+  ): ProjectPublicationRow | undefined {
+    const publication = this.getProjectPublication(projectId);
+    if (!publication) return undefined;
+    this.raw.transaction(() => {
+      this.raw
+        .prepare(
+          "UPDATE project_publications SET state='removal_pending',detach_after_removal=?,last_error=NULL,updated_at=? WHERE project_id=?",
+        )
+        .run(detach ? 1 : 0, new Date().toISOString(), projectId);
+      this.markPublicationTargetDirty(publication.target_id, true, "remove");
+    })();
+    return this.getProjectPublication(projectId);
+  }
+
+  markProjectPublicationDirty(projectId: string, immediate = false): void {
+    const publication = this.getProjectPublication(projectId);
+    if (publication) this.markPublicationTargetDirty(publication.target_id, immediate);
+  }
+
+  markPublicationTargetDirty(
+    targetId: string,
+    immediate = false,
+    operation: "publish" | "remove" = "publish",
+  ): number {
+    return this.raw.transaction(() => {
+      const now = new Date();
+      this.raw
+        .prepare(
+          "UPDATE publication_targets SET dirty_revision=dirty_revision+1,updated_at=? WHERE id=?",
+        )
+        .run(now.toISOString(), targetId);
+      const target = this.getPublicationTarget(targetId);
+      if (!target) throw new Error("Publication target not found");
+      if (immediate || target.schedule_mode === "on_change") {
+        const available = immediate ? now : new Date(now.getTime() + 60_000);
+        this.enqueuePublication(targetId, operation, immediate, available.toISOString());
+      }
+      return target.dirty_revision;
+    })();
+  }
+
+  enqueuePublication(
+    targetId: string,
+    operation: "publish" | "remove" = "publish",
+    immediate = true,
+    availableAt = new Date().toISOString(),
+  ): string {
+    const target = this.getPublicationTarget(targetId);
+    if (!target) throw new Error("Publication target not found");
+    return this.raw.transaction(() => {
+      const existing = this.raw
+        .prepare("SELECT * FROM publication_jobs WHERE target_id=? AND status='queued'")
+        .get(targetId) as PublicationJobRow | undefined;
+      const now = new Date().toISOString();
+      if (existing) {
+        const availability = immediate
+          ? availableAt
+          : existing.available_at < availableAt
+            ? availableAt
+            : existing.available_at;
+        this.raw
+          .prepare(
+            "UPDATE publication_jobs SET operation=?,desired_revision=?,available_at=?,error=NULL,updated_at=? WHERE id=?",
+          )
+          .run(
+            operation === "remove" ? "remove" : existing.operation,
+            target.dirty_revision,
+            availability,
+            now,
+            existing.id,
+          );
+        return existing.id;
+      }
+      const id = randomUUID();
+      this.raw
+        .prepare(
+          `INSERT INTO publication_jobs(id,target_id,status,operation,desired_revision,attempts,max_attempts,available_at,created_at,updated_at)
+          VALUES (?,?,'queued',?,?,0,5,?,?,?)`,
+        )
+        .run(id, targetId, operation, target.dirty_revision, availableAt, now, now);
+      return id;
+    })();
+  }
+
+  claimPublicationJob(leaseSeconds = 300, now = new Date()): PublicationJobRow | undefined {
+    return this.raw.transaction(() => {
+      this.raw
+        .prepare(
+          "UPDATE publication_jobs SET status='queued',lease_token=NULL,lease_expires_at=NULL,available_at=?,updated_at=? WHERE status IN ('building','deploying') AND lease_expires_at<=?",
+        )
+        .run(now.toISOString(), now.toISOString(), now.toISOString());
+      const candidate = this.raw
+        .prepare(
+          `SELECT pj.* FROM publication_jobs pj WHERE pj.status='queued' AND pj.available_at<=?
+          AND NOT EXISTS (SELECT 1 FROM project_publications pp JOIN jobs j ON j.project_id=pp.project_id
+            WHERE pp.target_id=pj.target_id AND j.status IN ('queued','leased'))
+          ORDER BY CASE pj.operation WHEN 'remove' THEN 0 ELSE 1 END,pj.available_at LIMIT 1`,
+        )
+        .get(now.toISOString()) as PublicationJobRow | undefined;
+      if (!candidate) return undefined;
+      const token = randomToken(24);
+      const expires = new Date(now.getTime() + leaseSeconds * 1000).toISOString();
+      this.raw
+        .prepare(
+          "UPDATE publication_jobs SET status='building',attempts=attempts+1,lease_token=?,lease_expires_at=?,updated_at=? WHERE id=?",
+        )
+        .run(token, expires, now.toISOString(), candidate.id);
+      return this.raw
+        .prepare("SELECT * FROM publication_jobs WHERE id=?")
+        .get(candidate.id) as PublicationJobRow;
+    })();
+  }
+
+  setPublicationJobDeploying(id: string, leaseToken: string): boolean {
+    return (
+      this.raw
+        .prepare(
+          "UPDATE publication_jobs SET status='deploying',updated_at=? WHERE id=? AND lease_token=?",
+        )
+        .run(new Date().toISOString(), id, leaseToken).changes === 1
+    );
+  }
+
+  renewPublicationLease(id: string, leaseToken: string, leaseSeconds = 300): boolean {
+    const now = new Date();
+    return (
+      this.raw
+        .prepare(
+          "UPDATE publication_jobs SET lease_expires_at=?,updated_at=? WHERE id=? AND lease_token=? AND status IN ('building','deploying')",
+        )
+        .run(
+          new Date(now.getTime() + leaseSeconds * 1000).toISOString(),
+          now.toISOString(),
+          id,
+          leaseToken,
+        ).changes === 1
+    );
+  }
+
+  completePublicationJob(
+    job: PublicationJobRow,
+    result: { deploymentId: string | null; deploymentUrl: string; manifest: unknown },
+  ): void {
+    this.raw.transaction(() => {
+      const now = new Date().toISOString();
+      this.raw
+        .prepare(
+          "UPDATE publication_jobs SET status='succeeded',deployment_id=?,deployment_url=?,lease_token=NULL,lease_expires_at=NULL,error=NULL,updated_at=? WHERE id=?",
+        )
+        .run(result.deploymentId, result.deploymentUrl, now, job.id);
+      this.raw
+        .prepare(
+          "UPDATE publication_targets SET published_revision=max(published_revision,?),updated_at=? WHERE id=?",
+        )
+        .run(job.desired_revision, now, job.target_id);
+      this.raw
+        .prepare(
+          "INSERT INTO publication_manifests(id,target_id,revision,deployment_id,deployment_url,manifest_json,created_at) VALUES (?,?,?,?,?,?,?)",
+        )
+        .run(
+          randomUUID(),
+          job.target_id,
+          job.desired_revision,
+          result.deploymentId,
+          result.deploymentUrl,
+          JSON.stringify(result.manifest),
+          now,
+        );
+      this.raw
+        .prepare(
+          "UPDATE project_publications SET state='active',last_successful_revision=?,last_published_at=?,last_error=NULL,updated_at=? WHERE target_id=? AND state NOT IN ('removal_pending','removal_failed')",
+        )
+        .run(job.desired_revision, now, now, job.target_id);
+      this.raw
+        .prepare("DELETE FROM project_publications WHERE target_id=? AND detach_after_removal=1")
+        .run(job.target_id);
+      this.raw
+        .prepare(
+          "UPDATE project_publications SET state='active',last_error=NULL,updated_at=? WHERE target_id=? AND state='removal_pending'",
+        )
+        .run(now, job.target_id);
+      const target = this.getPublicationTarget(job.target_id)!;
+      if (target.dirty_revision > job.desired_revision)
+        this.enqueuePublication(job.target_id, "publish", true, now);
+    })();
+  }
+
+  failPublicationJob(job: PublicationJobRow, error: string): boolean {
+    const now = new Date();
+    if (job.attempts >= job.max_attempts) {
+      this.raw
+        .prepare(
+          "UPDATE publication_jobs SET status='failed',error=?,lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?",
+        )
+        .run(error, now.toISOString(), job.id);
+      this.raw
+        .prepare(
+          "UPDATE project_publications SET state=CASE WHEN state='removal_pending' THEN 'removal_failed' ELSE state END,last_error=?,updated_at=? WHERE target_id=?",
+        )
+        .run(error, now.toISOString(), job.target_id);
+      return false;
+    }
+    const delay = Math.min(15 * 60_000, 2 ** Math.max(0, job.attempts - 1) * 5_000);
+    this.raw
+      .prepare(
+        "UPDATE publication_jobs SET status='queued',error=?,available_at=?,lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?",
+      )
+      .run(error, new Date(now.getTime() + delay).toISOString(), now.toISOString(), job.id);
+    return true;
+  }
+
+  listPublicationJobs(targetId: string, limit = 50): PublicationJobRow[] {
+    return this.raw
+      .prepare("SELECT * FROM publication_jobs WHERE target_id=? ORDER BY created_at DESC LIMIT ?")
+      .all(targetId, limit) as PublicationJobRow[];
+  }
+
+  latestPublicationManifest(targetId: string): PublicationManifestRow | undefined {
+    return this.raw
+      .prepare(
+        "SELECT * FROM publication_manifests WHERE target_id=? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(targetId) as PublicationManifestRow | undefined;
+  }
+
+  listDuePublicationTargets(now = new Date().toISOString()): PublicationTargetRow[] {
+    return this.raw
+      .prepare(
+        `SELECT * FROM publication_targets WHERE schedule_mode IN ('hourly','daily','weekly','custom')
+        AND next_run_at IS NOT NULL AND next_run_at<=? AND dirty_revision>published_revision ORDER BY next_run_at`,
+      )
+      .all(now) as PublicationTargetRow[];
+  }
+
+  setPublicationNextRun(targetId: string, nextRunAt: string | null): void {
+    this.raw
+      .prepare("UPDATE publication_targets SET next_run_at=?,updated_at=? WHERE id=?")
+      .run(nextRunAt, new Date().toISOString(), targetId);
+  }
+
+  hasActiveProjectJobsForTarget(targetId: string): boolean {
+    return Boolean(
+      this.raw
+        .prepare(
+          `SELECT 1 FROM project_publications pp JOIN jobs j ON j.project_id=pp.project_id
+          WHERE pp.target_id=? AND j.status IN ('queued','leased') LIMIT 1`,
+        )
+        .get(targetId),
+    );
   }
 
   createWebhook(

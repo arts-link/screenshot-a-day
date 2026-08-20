@@ -1,0 +1,4 @@
+{{ printf "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>" | safeHTML }}
+<rss version="2.0"><channel><title>{{ site.Title }}</title><link>{{ site.BaseURL }}</link><description>{{ site.Params.description }}</description>
+{{ range where site.Data.galleries "indexable" true }}<item><title>{{ .name }}</title><link>{{ absURL .path }}</link><guid>{{ absURL .path }}</guid><pubDate>{{ time.Format "Mon, 02 Jan 2006 15:04:05 -0700" .updated_at }}</pubDate></item>{{ end }}
+</channel></rss>

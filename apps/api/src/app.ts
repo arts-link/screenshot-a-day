@@ -14,6 +14,8 @@ import {
   captureProfileInputSchema,
   loginInputSchema,
   projectInputSchema,
+  publicationTargetInputSchema,
+  publicationTargetUpdateSchema,
   runTriggerSchema,
   setupInputSchema,
   type CaptureRecord,
@@ -41,16 +43,28 @@ import {
   verifyPassword,
 } from "./auth.js";
 import type { AppConfig } from "./config.js";
-import { AppDatabase, type CaptureRow, type ProjectRow } from "./database.js";
+import {
+  AppDatabase,
+  type CaptureRow,
+  type ProjectRow,
+  type PublicationTargetRow,
+} from "./database.js";
 import { compareImages, thumbnail } from "./images.js";
 import { startScheduler } from "./scheduler.js";
 import { LocalBlobStore, type BlobStore } from "./storage.js";
 import { startWebhookDispatcher } from "./webhooks.js";
+import {
+  cleanupStalePublicationDirectories,
+  HugoRyderRenderer,
+  type PublicationRenderer,
+} from "./publication-renderer.js";
+import { nextPublicationRun, PublicationService } from "./publication-service.js";
 
 interface Dependencies {
   config: AppConfig;
   db?: AppDatabase;
   blobs?: BlobStore;
+  publicationRenderer?: PublicationRenderer;
 }
 
 export async function drainBlobDeletions(
@@ -114,6 +128,61 @@ function publicProject(project: ProjectRow, db: AppDatabase) {
   };
 }
 
+function projectPublicationDto(project: ProjectRow, db: AppDatabase) {
+  const publication = db.getProjectPublication(project.id);
+  if (!publication) return null;
+  return {
+    targetId: publication.target_id,
+    url: publication.gallery_url,
+    state: publication.state,
+    pending: publication.state !== "active",
+    active: publication.state === "active" && project.publish_mode !== "private",
+    lastPublishedAt: publication.last_published_at,
+    lastSuccessfulRevision: publication.last_successful_revision,
+    lastError: publication.last_error,
+    removalWarning:
+      publication.state === "removal_pending" || publication.state === "removal_failed"
+        ? "Remote files may remain available until removal succeeds."
+        : null,
+  };
+}
+
+function publicationTargetDto(target: PublicationTargetRow, db: AppDatabase) {
+  const jobs = db.listPublicationJobs(target.id, 1);
+  const latest = jobs[0];
+  const state =
+    latest?.status === "building" || latest?.status === "deploying"
+      ? "publishing"
+      : latest?.status === "queued"
+        ? "queued"
+        : latest?.status === "failed"
+          ? "failed"
+          : target.dirty_revision > target.published_revision
+            ? "dirty"
+            : "published";
+  return {
+    id: target.id,
+    name: target.name,
+    adapter: target.adapter,
+    renderer: target.renderer,
+    baseUrl: target.base_url,
+    branding: JSON.parse(target.branding_json),
+    scheduleMode: target.schedule_mode,
+    scheduleExpression: target.schedule_expression,
+    scheduleTimezone: target.schedule_timezone,
+    adapterConfig: JSON.parse(target.adapter_config_json),
+    credentialConfigured: Boolean(target.credentials_encrypted),
+    dirtyRevision: target.dirty_revision,
+    publishedRevision: target.published_revision,
+    nextRunAt: target.next_run_at,
+    lastVerifiedAt: target.last_verified_at,
+    lastVerificationError: target.last_verification_error,
+    state,
+    projectCount: db.listTargetProjectPublications(target.id).length,
+    createdAt: target.created_at,
+  };
+}
+
 function workerAuthorized(request: FastifyRequest, config: AppConfig): boolean {
   const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
   return Boolean(bearer && hashToken(bearer) === hashToken(config.workerToken));
@@ -127,12 +196,44 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
   const app = Fastify({
     logger: {
       level: config.logLevel,
-      redact: ["req.headers.authorization", "req.headers.cookie", "password", "headers", "cookies"],
+      redact: [
+        "req.headers.authorization",
+        "req.headers.cookie",
+        "password",
+        "headers",
+        "cookies",
+        "credentials",
+        "token",
+        "privateKey",
+        "passphrase",
+      ],
     },
     trustProxy: config.trustProxy,
     bodyLimit: 30 * 1024 * 1024,
   });
   const setup = new SetupManager();
+  const publicationRenderer =
+    dependencies.publicationRenderer ??
+    new HugoRyderRenderer({
+      db,
+      blobs,
+      hugoPath: config.hugoPath,
+      ryderPath: config.ryderPath,
+      templatePath: fileURLToPath(new URL("../static-gallery", import.meta.url)),
+      timeoutMs: config.publicationBuildTimeoutMs,
+    });
+  const publications = new PublicationService({
+    db,
+    config,
+    renderer: publicationRenderer,
+    log: app.log,
+  });
+  void cleanupStalePublicationDirectories().catch((error) =>
+    app.log.warn(
+      { error: error instanceof Error ? error.message : "unknown" },
+      "stale publication workspace cleanup failed",
+    ),
+  );
   let deletionDrain: Promise<void> | undefined;
   const drainDeletions = () => {
     deletionDrain ??= drainBlobDeletions(db, blobs, app.log).finally(() => {
@@ -288,7 +389,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
   app.get("/api/v1/projects", async (request, reply) => {
     const identity = requireIdentity(db, request, reply, "read");
     if (!identity) return;
-    const projects = db.listProjects();
+    const projects = db.listProjects().map((project) => ({
+      ...project,
+      staticPublication: projectPublicationDto(db.getProject(project.id)!, db),
+    }));
     return identity.projectIds
       ? projects.filter((project) => identity.projectIds!.includes(project.id))
       : projects;
@@ -307,6 +411,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       ...publicProject(project, db),
       shareToken: project.share_token,
       scheduleEnabled: Boolean(project.schedule_enabled),
+      staticPublication: null,
     });
   });
   app.get<{ Params: { id: string } }>("/api/v1/projects/:id", async (request, reply) => {
@@ -322,10 +427,15 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       scheduleEnabled: Boolean(project.schedule_enabled),
       retentionDays: project.retention_days,
       retentionCount: project.retention_count,
+      staticPublication: projectPublicationDto(project, db),
     };
   });
   app.delete<{ Params: { id: string } }>("/api/v1/projects/:id", async (request, reply) => {
     if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+    if (db.getProjectPublication(request.params.id))
+      return reply.code(409).send({
+        error: "Make the project private and complete remote detachment before deleting it",
+      });
     if (!db.deleteProject(request.params.id))
       return reply.code(404).send({ error: "Project not found" });
     await drainDeletions();
@@ -361,6 +471,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         });
     }
     const updated = db.updateProject(current.id, { ...input, nextRunAt });
+    db.markProjectPublicationDirty(current.id);
     return {
       ...publicProject(updated!, db),
       url: updated!.url,
@@ -370,6 +481,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       scheduleEnabled: Boolean(updated!.schedule_enabled),
       retentionDays: updated!.retention_days,
       retentionCount: updated!.retention_count,
+      staticPublication: projectPublicationDto(updated!, db),
     };
   });
   app.put<{ Params: { id: string } }>(
@@ -381,6 +493,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         request.params.id,
         encryptJson({ headers: input.headers, cookies: input.cookies }, config.encryptionKey),
       );
+      if (updated) db.markProjectPublicationDirty(request.params.id);
       return updated
         ? reply.code(204).send()
         : reply.code(404).send({ error: "Project not found" });
@@ -396,10 +509,207 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
           rotate: z.boolean().default(false),
         })
         .parse(request.body);
+      const current = db.getProject(request.params.id);
       const project = db.updatePublication(request.params.id, body.publishMode, body.rotate);
+      if (project && db.getProjectPublication(project.id)) {
+        const sensitive =
+          body.publishMode === "private" ||
+          body.rotate ||
+          current?.publish_mode !== body.publishMode;
+        if (sensitive) db.requestProjectPublicationRemoval(project.id);
+        else db.markProjectPublicationDirty(project.id);
+      }
       return project
-        ? { publishMode: project.publish_mode, shareToken: project.share_token }
+        ? {
+            publishMode: project.publish_mode,
+            shareToken: project.share_token,
+            staticPublication: projectPublicationDto(project, db),
+          }
         : reply.code(404).send({ error: "Project not found" });
+    },
+  );
+  app.put<{ Params: { id: string } }>(
+    "/api/v1/projects/:id/static-publication",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+      const body = z.object({ targetId: z.string().min(1) }).parse(request.body);
+      try {
+        const publication = db.attachProjectToTarget(request.params.id, body.targetId);
+        const project = db.getProject(request.params.id)!;
+        return reply.code(201).send(projectPublicationDto(project, db) ?? publication);
+      } catch (error) {
+        return reply
+          .code(409)
+          .send({ error: error instanceof Error ? error.message : "Unable to attach project" });
+      }
+    },
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/v1/projects/:id/static-publication",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+      try {
+        const publication = db.requestProjectDetachment(request.params.id);
+        return publication
+          ? reply.code(202).send({
+              state: publication.state,
+              warning: "Detachment completes only after remote removal succeeds",
+            })
+          : reply.code(404).send({ error: "Static publication is not attached" });
+      } catch (error) {
+        return reply
+          .code(409)
+          .send({ error: error instanceof Error ? error.message : "Unable to detach project" });
+      }
+    },
+  );
+
+  app.get("/api/v1/publication/status", async (request, reply) => {
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+    return publications.rendererStatus();
+  });
+  app.get("/api/v1/publication-targets", async (request, reply) => {
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+    return db.listPublicationTargets().map((target) => publicationTargetDto(target, db));
+  });
+  app.post("/api/v1/publication-targets", async (request, reply) => {
+    if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+    const input = publicationTargetInputSchema.parse(request.body);
+    if (input.target.adapter !== "sftp" && !input.baseUrl.startsWith("https://"))
+      return reply.code(400).send({ error: "Vercel and Netlify publication URLs must use HTTPS" });
+    let nextRunAt: string | null;
+    try {
+      nextRunAt = nextPublicationRun(
+        input.scheduleMode,
+        input.scheduleExpression,
+        input.scheduleTimezone,
+      );
+    } catch {
+      return reply.code(400).send({ error: "Publication schedule or timezone is invalid" });
+    }
+    const target = db.createPublicationTarget(
+      input,
+      encryptJson(input.target.credentials, config.encryptionKey),
+      nextRunAt,
+    );
+    return reply.code(201).send(publicationTargetDto(target, db));
+  });
+  app.patch<{ Params: { id: string } }>(
+    "/api/v1/publication-targets/:id",
+    async (request, reply) => {
+      if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+      const current = db.getPublicationTarget(request.params.id);
+      if (!current) return reply.code(404).send({ error: "Publication target not found" });
+      const input = publicationTargetUpdateSchema.parse(request.body);
+      if (input.baseUrl) {
+        const base = new URL(input.baseUrl);
+        if ((base.pathname && base.pathname !== "/") || base.search || base.hash)
+          return reply.code(400).send({
+            error: "The canonical base URL must be an origin without a path, query, or fragment",
+          });
+      }
+      if (input.target && input.target.adapter !== current.adapter)
+        return reply.code(409).send({ error: "Create a new target to change adapter type" });
+      const mode = input.scheduleMode ?? current.schedule_mode;
+      const expression =
+        input.scheduleExpression === undefined
+          ? current.schedule_expression
+          : input.scheduleExpression;
+      const timezone = input.scheduleTimezone ?? current.schedule_timezone;
+      if (mode === "custom" && !expression)
+        return reply.code(400).send({ error: "Custom schedules require a cron expression" });
+      let nextRunAt: string | null;
+      try {
+        nextRunAt = nextPublicationRun(mode, expression, timezone);
+      } catch {
+        return reply.code(400).send({ error: "Publication schedule or timezone is invalid" });
+      }
+      const target = db.updatePublicationTarget(current.id, {
+        ...input,
+        ...(input.target
+          ? { adapter: input.target.adapter, adapterConfig: input.target.config }
+          : {}),
+        nextRunAt,
+      });
+      return publicationTargetDto(target!, db);
+    },
+  );
+  app.put<{ Params: { id: string } }>(
+    "/api/v1/publication-targets/:id/credentials",
+    async (request, reply) => {
+      if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+      const target = db.getPublicationTarget(request.params.id);
+      if (!target) return reply.code(404).send({ error: "Publication target not found" });
+      const credentials =
+        target.adapter === "sftp"
+          ? z
+              .union([
+                z.object({ kind: z.literal("password"), password: z.string().min(1).max(2000) }),
+                z.object({
+                  kind: z.literal("private_key"),
+                  privateKey: z.string().min(1).max(100_000),
+                  passphrase: z.string().max(2000).nullable().default(null),
+                }),
+              ])
+              .parse(request.body)
+          : z.object({ token: z.string().min(1).max(1000) }).parse(request.body);
+      db.replacePublicationCredentials(target.id, encryptJson(credentials, config.encryptionKey));
+      return reply.code(204).send();
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/v1/publication-targets/:id/verify",
+    async (request, reply) => {
+      if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+      const target = db.getPublicationTarget(request.params.id);
+      if (!target) return reply.code(404).send({ error: "Publication target not found" });
+      await publications.verifyTarget(target);
+      return { verified: true, verifiedAt: db.getPublicationTarget(target.id)!.last_verified_at };
+    },
+  );
+  app.post<{ Params: { id: string } }>(
+    "/api/v1/publication-targets/:id/publish",
+    async (request, reply) => {
+      if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+      if (!db.getPublicationTarget(request.params.id))
+        return reply.code(404).send({ error: "Publication target not found" });
+      return reply.code(202).send({ jobId: publications.publishNow(request.params.id) });
+    },
+  );
+  app.get<{ Params: { id: string } }>(
+    "/api/v1/publication-targets/:id/history",
+    async (request, reply) => {
+      if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+      if (!db.getPublicationTarget(request.params.id))
+        return reply.code(404).send({ error: "Publication target not found" });
+      return db.listPublicationJobs(request.params.id).map((job) => ({
+        id: job.id,
+        status: job.status,
+        operation: job.operation,
+        desiredRevision: job.desired_revision,
+        attempts: job.attempts,
+        availableAt: job.available_at,
+        deploymentId: job.deployment_id,
+        deploymentUrl: job.deployment_url,
+        error: job.error,
+        createdAt: job.created_at,
+        updatedAt: job.updated_at,
+      }));
+    },
+  );
+  app.delete<{ Params: { id: string } }>(
+    "/api/v1/publication-targets/:id",
+    async (request, reply) => {
+      if (!requireInstanceIdentity(db, request, reply, "manage")) return;
+      try {
+        return db.deletePublicationTarget(request.params.id)
+          ? reply.code(204).send()
+          : reply.code(404).send({ error: "Publication target not found" });
+      } catch (error) {
+        return reply
+          .code(409)
+          .send({ error: error instanceof Error ? error.message : "Unable to delete target" });
+      }
     },
   );
   app.get<{ Params: { id: string } }>("/api/v1/projects/:id/runs", async (request, reply) =>
@@ -412,6 +722,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     if (!db.getProject(request.params.id))
       return reply.code(404).send({ error: "Project not found" });
     const profile = db.addProfile(request.params.id, captureProfileInputSchema.parse(request.body));
+    db.markProjectPublicationDirty(request.params.id);
     return reply.code(201).send({
       id: profile.id,
       name: profile.name,
@@ -427,6 +738,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       if (!current || current.project_id !== request.params.id)
         return reply.code(404).send({ error: "Profile not found" });
       const profile = db.updateProfile(current.id, captureProfileInputSchema.parse(request.body))!;
+      db.markProjectPublicationDirty(request.params.id);
       return {
         id: profile.id,
         name: profile.name,
@@ -445,6 +757,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       if (db.listProfiles(request.params.id).length === 1)
         return reply.code(409).send({ error: "A project must retain at least one profile" });
       db.deleteProfile(current.id);
+      db.markProjectPublicationDirty(request.params.id);
       await drainDeletions();
       return reply.code(204).send();
     },
@@ -765,7 +1078,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       const { exported, published } = db.saveExport(job, key, Number(metadata.frameCount ?? 0));
       if (!published) {
         db.queueBlobDeletion(key);
-      }
+      } else db.markProjectPublicationDirty(job.project_id);
       await drainDeletions();
       return reply.code(201).send({ id: exported.id, published });
     }
@@ -816,6 +1129,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     };
     db.enqueueWebhookDeliveries(job.project_id, "capture.changed", payload, changePercent);
     await enforceRetention(db, blobs, job.project_id, job.profile_id!);
+    db.markProjectPublicationDirty(job.project_id);
     const project = db.getProject(job.project_id);
     if (project && project.publish_mode !== "private") {
       const frames = db
@@ -1062,9 +1376,11 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
 
   const stopScheduler = startScheduler(db, app.log);
   const stopWebhooks = startWebhookDispatcher(db, config, app.log);
+  const stopPublications = publications.start();
   app.addHook("onClose", async () => {
     stopScheduler();
     stopWebhooks();
+    stopPublications();
     clearInterval(deletionTimer);
     await deletionDrain;
     db.close();
@@ -1080,6 +1396,15 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         !request.url.startsWith("/api/") &&
         !request.url.startsWith("/internal/")
       ) {
+        const publicRoute = new URL(request.url, config.publicUrl).pathname.match(
+          /^\/(p|s)\/([^/]+)\/?$/,
+        );
+        if (publicRoute) {
+          const kind = publicRoute[1] === "p" ? "slug" : "token";
+          const value = publicRoute[2]!;
+          if (!db.getPublishedProject(kind, value))
+            return reply.code(404).send({ error: "Gallery not found" });
+        }
         if (request.url.startsWith("/s/")) reply.header("x-robots-tag", "noindex, nofollow");
         return reply.sendFile("index.html");
       }
@@ -1098,7 +1423,8 @@ async function enforceRetention(
   projectId: string,
   profileId: string,
 ): Promise<void> {
-  for (const capture of db.retentionVictims(projectId, profileId)) {
+  const victims = db.retentionVictims(projectId, profileId);
+  for (const capture of victims) {
     await Promise.all(
       [capture.image_key, capture.thumbnail_key, capture.diff_key]
         .filter((key): key is string => Boolean(key))
@@ -1106,4 +1432,5 @@ async function enforceRetention(
     );
     db.deleteCapture(capture.id);
   }
+  if (victims.length) db.markProjectPublicationDirty(projectId);
 }

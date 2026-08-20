@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" {{ if .Params.noindex }} data-unlisted="true" {{ end }}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#12100e" />
+    <title>{{ if .Title }}{{ .Title }} · {{ end }}{{ site.Title }}</title>
+    <meta name="description" content="{{ .Description | default site.Params.description }}" />
+    {{ if .Params.noindex }}
+    <meta name="robots" content="noindex,nofollow,noarchive" />
+    {{ end }} {{ $analytics := site.Params.analytics }}{{ if eq $analytics.provider "plausible" }}
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self' https://plausible.io; font-src 'self'; connect-src 'self' https://plausible.io; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    {{ else if eq $analytics.provider "posthog" }}{{ $analyticsURL := urls.Parse $analytics.host }}{{ $analyticsOrigin := printf "%s://%s" $analyticsURL.Scheme $analyticsURL.Host }}
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self' {{ $analyticsOrigin }}; font-src 'self'; connect-src 'self' {{ $analyticsOrigin }}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    {{ else }}
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    />
+    {{ end }}
+    <link rel="stylesheet" href="/{{ site.Data.assets.css }}" />
+    <script defer src="/{{ site.Data.assets.js }}"></script>
+    {{ partial "analytics.html" . }}
+  </head>
+  <body class="{{ if site.Params.darkMode }}dark{{ end }}">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="product-mark" href="/" aria-label="Screenshot-a-Day gallery home">
+        <span class="aperture" aria-hidden="true"><span></span></span>
+        <span class="product-name">Screenshot<span>-a-Day</span></span>
+      </a>
+      <div class="maker-lockup">
+        <span>an</span>
+        <a href="https://www.arts-link.com/">arts-link</a>
+        <span>project</span>
+      </div>
+      <nav aria-label="Primary navigation">
+        <a href="/">Galleries</a>
+        <a href="https://arts-link.github.io/screenshot-a-day/">About</a>
+        <a class="nav-source" href="https://github.com/arts-link/screenshot-a-day">
+          Source <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
+    </header>
+    <main id="main">{{ block "main" . }}{{ end }}</main>
+    <footer class="site-footer">
+      <div>
+        <a class="footer-maker" href="https://www.arts-link.com/">arts-link</a>
+        {{ with site.Params.supplementalFooter }}<p>{{ . }}</p>{{ end }}
+      </div>
+      <div class="footer-meta">
+        <p>
+          <a href="https://arts-link.github.io/ryder/">Ryder theme</a>
+          <span aria-hidden="true">·</span>
+          <a href="https://github.com/arts-link/screenshot-a-day">Screenshot-a-Day source</a>
+        </p>
+      </div>
+    </footer>
+    <dialog id="lightbox">
+      <button data-close aria-label="Close">×</button><img alt="Full screenshot" />
+      <p></p>
+    </dialog>
+  </body>
+</html>
