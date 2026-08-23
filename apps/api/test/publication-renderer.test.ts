@@ -1,13 +1,13 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppDatabase } from "../src/database.js";
-import { HugoRyderRenderer } from "../src/publication-renderer.js";
+import { StaticGalleryRenderer } from "../src/publication-renderer.js";
 import { LocalBlobStore } from "../src/storage.js";
 
-const hugoPath = process.env.SAD_TEST_HUGO_PATH ?? "hugo";
-const ryderPath = process.env.SAD_TEST_RYDER_PATH ?? "/Volumes/wanderer/dev/solo/ryder";
+const templateRoot = fileURLToPath(new URL("../static-gallery", import.meta.url));
 
 function emptyProjectInput(
   name: string,
@@ -48,7 +48,7 @@ function emptyProjectInput(
   };
 }
 
-describe("Hugo Ryder publication renderer", () => {
+describe("static gallery publication renderer", () => {
   const directories: string[] = [];
 
   afterEach(async () => {
@@ -149,13 +149,10 @@ describe("Hugo Ryder publication renderer", () => {
       null,
     );
     db.attachProjectToTarget(project.id, target.id);
-    const renderer = new HugoRyderRenderer({
+    const renderer = new StaticGalleryRenderer({
       db,
       blobs,
-      hugoPath,
-      ryderPath,
-      templatePath: join(process.cwd(), "apps/api/static-gallery"),
-      timeoutMs: 30_000,
+      templatePath: templateRoot,
     });
     expect(await renderer.verify()).toEqual({ available: true, error: null });
     const first = await renderer.render(target);
@@ -174,7 +171,6 @@ describe("Hugo Ryder publication renderer", () => {
       const htmlFiles = first.files.filter((file) => file.path.endsWith(".html"));
       for (const file of htmlFiles) {
         const html = await readFile(join(first.directory, file.path), "utf8");
-        expect(html, file.path).toContain("https://arts-link.github.io/ryder/");
         expect(html, file.path).toContain("https://www.arts-link.com/");
         expect(html, file.path).toContain("https://github.com/arts-link/screenshot-a-day");
         expect(html).not.toContain("/api/");
@@ -188,6 +184,11 @@ describe("Hugo Ryder publication renderer", () => {
       expect(gallery).toContain("Escaped &lt;Studio&gt; &amp; history");
       expect(gallery).toContain("media/");
       expect(gallery).not.toContain("noindex");
+      // Attribute context: an unescaped project name here would break out of alt="".
+      expect(gallery).not.toMatch(/alt="[^"]*<Studio>/);
+      const robots = await readFile(join(first.directory, "robots.txt"), "utf8");
+      expect(robots).toContain("Disallow: /s/");
+      expect(robots).toContain("Sitemap: https://history.example.com/sitemap.xml");
     } finally {
       await first.cleanup();
       await second.cleanup();
@@ -240,13 +241,10 @@ describe("Hugo Ryder publication renderer", () => {
     );
     db.attachProjectToTarget(unlisted.id, target.id);
     db.attachProjectToTarget(privateProject.id, target.id);
-    const renderer = new HugoRyderRenderer({
+    const renderer = new StaticGalleryRenderer({
       db,
       blobs,
-      hugoPath,
-      ryderPath,
-      templatePath: join(process.cwd(), "apps/api/static-gallery"),
-      timeoutMs: 30_000,
+      templatePath: templateRoot,
     });
     const site = await renderer.render(target);
     try {

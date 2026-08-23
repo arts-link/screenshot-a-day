@@ -55,7 +55,7 @@ import { LocalBlobStore, type BlobStore } from "./storage.js";
 import { startWebhookDispatcher } from "./webhooks.js";
 import {
   cleanupStalePublicationDirectories,
-  HugoRyderRenderer,
+  StaticGalleryRenderer,
   type PublicationRenderer,
 } from "./publication-renderer.js";
 import { nextPublicationRun, PublicationService } from "./publication-service.js";
@@ -164,7 +164,6 @@ function publicationTargetDto(target: PublicationTargetRow, db: AppDatabase) {
     id: target.id,
     name: target.name,
     adapter: target.adapter,
-    renderer: target.renderer,
     baseUrl: target.base_url,
     branding: JSON.parse(target.branding_json),
     scheduleMode: target.schedule_mode,
@@ -214,13 +213,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
   const setup = new SetupManager();
   const publicationRenderer =
     dependencies.publicationRenderer ??
-    new HugoRyderRenderer({
+    new StaticGalleryRenderer({
       db,
       blobs,
-      hugoPath: config.hugoPath,
-      ryderPath: config.ryderPath,
       templatePath: fileURLToPath(new URL("../static-gallery", import.meta.url)),
-      timeoutMs: config.publicationBuildTimeoutMs,
     });
   const publications = new PublicationService({
     db,

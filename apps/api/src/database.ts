@@ -120,7 +120,6 @@ export interface PublicationTargetRow {
   id: string;
   name: string;
   adapter: PublicationAdapter;
-  renderer: "hugo-ryder";
   base_url: string;
   branding_json: string;
   schedule_mode: PublicationScheduleMode;
@@ -240,7 +239,7 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 const MIGRATION_2 = `
 CREATE TABLE publication_targets (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, adapter TEXT NOT NULL CHECK (adapter IN ('vercel','netlify','sftp')),
-  renderer TEXT NOT NULL DEFAULT 'hugo-ryder' CHECK (renderer='hugo-ryder'), base_url TEXT NOT NULL,
+  base_url TEXT NOT NULL,
   branding_json TEXT NOT NULL, schedule_mode TEXT NOT NULL CHECK (schedule_mode IN ('manual','on_change','hourly','daily','weekly','custom')),
   schedule_expression TEXT, schedule_timezone TEXT NOT NULL, adapter_config_json TEXT NOT NULL,
   credentials_encrypted TEXT NOT NULL, dirty_revision INTEGER NOT NULL DEFAULT 0, published_revision INTEGER NOT NULL DEFAULT 0,
@@ -995,7 +994,6 @@ export class AppDatabase {
       id: randomUUID(),
       name: input.name,
       adapter: input.target.adapter,
-      renderer: "hugo-ryder",
       base_url: input.baseUrl,
       branding_json: JSON.stringify(input.branding),
       schedule_mode: input.scheduleMode,
@@ -1013,8 +1011,8 @@ export class AppDatabase {
     };
     this.raw
       .prepare(
-        `INSERT INTO publication_targets(id,name,adapter,renderer,base_url,branding_json,schedule_mode,schedule_expression,schedule_timezone,adapter_config_json,credentials_encrypted,dirty_revision,published_revision,next_run_at,last_verified_at,last_verification_error,created_at,updated_at)
-        VALUES (@id,@name,@adapter,@renderer,@base_url,@branding_json,@schedule_mode,@schedule_expression,@schedule_timezone,@adapter_config_json,@credentials_encrypted,@dirty_revision,@published_revision,@next_run_at,@last_verified_at,@last_verification_error,@created_at,@updated_at)`,
+        `INSERT INTO publication_targets(id,name,adapter,base_url,branding_json,schedule_mode,schedule_expression,schedule_timezone,adapter_config_json,credentials_encrypted,dirty_revision,published_revision,next_run_at,last_verified_at,last_verification_error,created_at,updated_at)
+        VALUES (@id,@name,@adapter,@base_url,@branding_json,@schedule_mode,@schedule_expression,@schedule_timezone,@adapter_config_json,@credentials_encrypted,@dirty_revision,@published_revision,@next_run_at,@last_verified_at,@last_verification_error,@created_at,@updated_at)`,
       )
       .run(row);
     return row;

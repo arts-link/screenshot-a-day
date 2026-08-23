@@ -12,7 +12,6 @@ function target(adapter: "vercel" | "netlify" | "sftp", config: unknown): Public
     id: "target-fixture",
     name: "Fixture",
     adapter,
-    renderer: "hugo-ryder",
     base_url: "https://history.example.com",
     branding_json: "{}",
     schedule_mode: "manual",
