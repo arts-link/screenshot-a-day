@@ -35,7 +35,7 @@ ghcr.io/arts-link/screenshot-a-day-api:0.1.0
 ghcr.io/arts-link/screenshot-a-day-worker:0.1.0
 ```
 
-To keep the home server private while hosting galleries elsewhere, configure a portable Hugo/Ryder target using the [static publishing guide](docs/guides/static-publishing.md). Existing Vercel projects, Netlify sites, and dedicated SFTP roots are supported.
+To keep the home server private while hosting galleries elsewhere, configure a portable static publication target using the [static publishing guide](docs/guides/static-publishing.md). Existing Vercel projects, Netlify sites, and dedicated SFTP roots are supported.
 
 ## Supported platforms and v0.1 limitations
 

@@ -33,9 +33,6 @@ describe("control plane", () => {
       privateTargetAllowlist: ["localhost"],
       trustProxy: false,
       buildCommit: "test-commit",
-      hugoPath: "hugo",
-      ryderPath: "/Volumes/wanderer/dev/solo/ryder",
-      publicationBuildTimeoutMs: 30_000,
       publicationDeployTimeoutMs: 30_000,
       logLevel: "silent",
     };
@@ -132,7 +129,6 @@ describe("control plane", () => {
     expect(created.body).not.toContain("vercel-secret-token");
     expect(created.json()).toMatchObject({
       adapter: "vercel",
-      renderer: "hugo-ryder",
       credentialConfigured: true,
       state: "published",
     });

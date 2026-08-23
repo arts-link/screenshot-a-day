@@ -1,14 +1,25 @@
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, relative, sep } from "node:path";
-import { promisify } from "node:util";
-import { execFile } from "node:child_process";
+import { dirname, extname, join, relative, sep } from "node:path";
 import type { PublicationBranding } from "@sad/contracts";
 import type { AppDatabase, PublicationTargetRow } from "./database.js";
 import type { BlobStore } from "./storage.js";
+import {
+  galleryPage,
+  homePage,
+  notFoundPage,
+  profilePage,
+  robotsTxt,
+  rssFeed,
+  sitemapXml,
+  type CaptureFrame,
+  type Gallery,
+  type ProfilePage,
+  type ProfileSummary,
+  type SiteContext,
+} from "./publication-templates.js";
 
-const execFileAsync = promisify(execFile);
 const PAGE_SIZE = 24;
 
 export async function cleanupStalePublicationDirectories(
@@ -38,7 +49,7 @@ export interface RenderedPublication {
 }
 
 export interface PublicationRenderer {
-  readonly id: "hugo-ryder";
+  readonly id: "static-gallery";
   verify(): Promise<{ available: boolean; error: string | null }>;
   render(target: PublicationTargetRow): Promise<RenderedPublication>;
 }
@@ -46,14 +57,7 @@ export interface PublicationRenderer {
 interface RendererOptions {
   db: AppDatabase;
   blobs: BlobStore;
-  hugoPath: string;
-  ryderPath: string;
   templatePath: string;
-  timeoutMs: number;
-  runHugo?: (
-    args: string[],
-    options: { cwd: string; timeout: number; env: NodeJS.ProcessEnv },
-  ) => Promise<void>;
 }
 
 function sha256(bytes: Uint8Array): string {
@@ -90,52 +94,38 @@ async function listFiles(root: string, directory = root): Promise<ManagedFile[]>
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-async function removeAliasPages(directory: string): Promise<void> {
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) await removeAliasPages(path);
-    else if (entry.isFile() && entry.name.endsWith(".html")) {
-      const html = await readFile(path, "utf8");
-      if (html.includes('<meta http-equiv="refresh"')) await rm(path);
-    }
-  }
+async function writeOutput(root: string, path: string, contents: string | Uint8Array) {
+  const destination = join(root, path);
+  await mkdir(dirname(destination), { recursive: true });
+  await writeFile(destination, contents);
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-}
-
-async function writePage(path: string, frontMatter: Record<string, unknown>): Promise<void> {
-  await writeJson(path, frontMatter);
-}
-
-export class HugoRyderRenderer implements PublicationRenderer {
-  readonly id = "hugo-ryder" as const;
+/**
+ * Renders every attached gallery to a self-contained static site in a temporary
+ * directory. Output is produced in-process: there is no external site generator, no
+ * subprocess, and therefore no environment to leak into one.
+ */
+export class StaticGalleryRenderer implements PublicationRenderer {
+  readonly id = "static-gallery" as const;
 
   constructor(private readonly options: RendererOptions) {}
 
+  private asset(...segments: string[]): string {
+    return join(this.options.templatePath, ...segments);
+  }
+
   async verify(): Promise<{ available: boolean; error: string | null }> {
     try {
-      const { stdout } = await execFileAsync(this.options.hugoPath, ["version"], {
-        timeout: 10_000,
-      });
-      if (!/v0\.146\.2\b/.test(stdout) || !/extended/i.test(stdout))
-        return {
-          available: false,
-          error: `Publishing requires Hugo Extended 0.146.2; found ${stdout.trim()}`,
-        };
-      const theme = await readFile(join(this.options.ryderPath, "theme.toml"), "utf8");
-      if (
-        !/name\s*=\s*["']Ryder["']/i.test(theme) ||
-        !/version\s*=\s*["']v0\.4\.1["']/i.test(theme)
-      )
-        return { available: false, error: "The pinned Ryder theme is missing or incompatible" };
+      await Promise.all([
+        readFile(this.asset("assets", "gallery.css")),
+        readFile(this.asset("assets", "gallery.js")),
+        readFile(this.asset("static", "_headers")),
+      ]);
       return { available: true, error: null };
     } catch (error) {
       return {
         available: false,
-        error: error instanceof Error ? error.message : "Hugo is unavailable",
+        error: `Bundled gallery assets are missing: ${error instanceof Error ? error.message : "unknown"}`,
       };
     }
   }
@@ -144,21 +134,21 @@ export class HugoRyderRenderer implements PublicationRenderer {
     const workspace = await mkdtemp(join(tmpdir(), "sad-publication-"));
     const output = join(workspace, "public");
     try {
-      await cp(this.options.templatePath, workspace, { recursive: true });
+      await mkdir(output, { recursive: true });
       const branding = JSON.parse(target.branding_json) as PublicationBranding;
-      const cssSource = await readFile(join(workspace, "assets", "gallery.css"), "utf8");
-      const jsSource = await readFile(join(workspace, "assets", "gallery.js"));
+      const cssSource = await readFile(this.asset("assets", "gallery.css"), "utf8");
+      const jsSource = await readFile(this.asset("assets", "gallery.js"));
       const brandedCss = `:root{--accent:${branding.accentColor};--background:${branding.backgroundColor}}\n${cssSource}`;
-      const cssName = `assets/gallery.${sha256(Buffer.from(brandedCss)).slice(0, 16)}.css`;
-      const jsName = `assets/gallery.${sha256(jsSource).slice(0, 16)}.js`;
-      await mkdir(join(workspace, "static", "assets"), { recursive: true });
-      await writeFile(join(workspace, "static", cssName), brandedCss);
-      await writeFile(join(workspace, "static", jsName), jsSource);
-      await writeJson(join(workspace, "data", "assets.json"), { css: cssName, js: jsName });
+      const cssPath = `assets/gallery.${sha256(Buffer.from(brandedCss)).slice(0, 16)}.css`;
+      const jsPath = `assets/gallery.${sha256(jsSource).slice(0, 16)}.js`;
+      await writeOutput(output, cssPath, brandedCss);
+      await writeOutput(output, jsPath, jsSource);
+      await copyFile(this.asset("static", "_headers"), join(output, "_headers"));
 
-      const galleryByKey: Record<string, unknown> = {};
-      const galleries: Array<Record<string, unknown>> = [];
+      const site: SiteContext = { baseUrl: target.base_url, branding, cssPath, jsPath };
+
       const materialized = new Map<string, string>();
+      const written = new Set<string>();
       const materialize = async (
         key: string | null,
         fallbackExtension: string,
@@ -168,14 +158,15 @@ export class HugoRyderRenderer implements PublicationRenderer {
         if (existing) return existing;
         const bytes = await this.options.blobs.get(key);
         const path = `media/${sha256(bytes)}${extensionFor(key, fallbackExtension)}`;
-        if (![...materialized.values()].includes(path)) {
-          await mkdir(dirname(join(workspace, "static", path)), { recursive: true });
-          await writeFile(join(workspace, "static", path), bytes);
+        if (!written.has(path)) {
+          await writeOutput(output, path, bytes);
+          written.add(path);
         }
         materialized.set(key, path);
         return path;
       };
 
+      const galleries: Gallery[] = [];
       for (const publication of this.options.db.listTargetProjectPublications(target.id)) {
         const project = this.options.db.getProject(publication.project_id);
         if (!project || project.publish_mode === "private") continue;
@@ -189,150 +180,107 @@ export class HugoRyderRenderer implements PublicationRenderer {
             (capture) =>
               capture.status === "succeeded" && capture.image_key && capture.thumbnail_key,
           );
-        const profileData: Array<Record<string, unknown>> = [];
-        const profilePages: Record<string, unknown> = {};
+        const profiles: ProfileSummary[] = [];
+        const pages: Array<{ path: string; page: ProfilePage }> = [];
+        const usedSlugs = new Map<string, number>();
         for (const profile of this.options.db.listProfiles(project.id)) {
           const history = captures.filter((capture) => capture.profile_id === profile.id);
           if (!history.length) continue;
-          const profileSlug = safeSegment(
+          const base = safeSegment(
             profile.name
               .toLowerCase()
               .replace(/[^a-z0-9]+/g, "-")
               .replace(/^-|-$/g, "") || "profile",
           );
+          // Two profiles can slugify identically ("Desktop 1" and "Desktop-1"); without
+          // this the second would silently overwrite the first's published pages.
+          const collisions = usedSlugs.get(base) ?? 0;
+          usedSlugs.set(base, collisions + 1);
+          const profileSlug = collisions === 0 ? base : `${base}-${collisions + 1}`;
           const pageCount = Math.ceil(history.length / PAGE_SIZE);
-          const pages = [];
+          const profilePaths: string[] = [];
           for (let page = 1; page <= pageCount; page++) {
-            const pageKey = `${profile.id}-${page}`;
             const pagePath = `${path}${profileSlug}/page/${page}/`;
-            const pageCaptures = [];
+            const frames: CaptureFrame[] = [];
             for (const capture of history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
-              pageCaptures.push({
+              frames.push({
                 id: capture.id,
-                captured_at: capture.captured_at,
-                change_percent: capture.change_percent,
-                width: capture.width,
-                height: capture.height,
+                capturedAt: capture.captured_at,
+                changePercent: capture.change_percent,
                 image: await materialize(capture.image_key, ".png"),
                 thumbnail: await materialize(capture.thumbnail_key, ".webp"),
                 diff: await materialize(capture.diff_key, ".png"),
               });
             }
-            profilePages[pageKey] = {
-              name: profile.name,
-              browser: profile.browser,
-              page,
-              pages: pageCount,
-              captures: pageCaptures,
-              previous: page > 1 ? `${path}${profileSlug}/page/${page - 1}/` : null,
-              next: page < pageCount ? `${path}${profileSlug}/page/${page + 1}/` : null,
-            };
-            await writePage(join(workspace, "content", pagePath, "index.md"), {
-              title: `${profile.name} · ${project.name}`,
-              description: `${project.name} visual history for ${profile.name}`,
-              layout: "profile",
-              gallery_key: project.id,
-              page_key: pageKey,
-              noindex: project.publish_mode === "unlisted",
-              sitemap: { disable: project.publish_mode === "unlisted" },
-              outputs: ["HTML"],
+            pages.push({
+              path: pagePath,
+              page: {
+                name: profile.name,
+                browser: profile.browser,
+                page,
+                pages: pageCount,
+                captures: frames,
+                previous: page > 1 ? `${path}${profileSlug}/page/${page - 1}/` : null,
+                next: page < pageCount ? `${path}${profileSlug}/page/${page + 1}/` : null,
+              },
             });
-            pages.push(pagePath);
+            profilePaths.push(pagePath);
           }
-          const gif = await materialize(
-            this.options.db.getExport(profile.id, "gif")?.blob_key ?? null,
-            ".gif",
-          );
-          const webm = await materialize(
-            this.options.db.getExport(profile.id, "webm")?.blob_key ?? null,
-            ".webm",
-          );
-          profileData.push({
+          profiles.push({
             id: profile.id,
             name: profile.name,
             browser: profile.browser,
-            settings: JSON.parse(profile.settings_json),
-            capture_count: history.length,
-            latest_thumbnail: await materialize(history[0]!.thumbnail_key, ".webp"),
-            path: pages[0],
-            gif,
-            webm,
+            captureCount: history.length,
+            latestThumbnail: await materialize(history[0]!.thumbnail_key, ".webp"),
+            path: profilePaths[0],
+            gif: await materialize(
+              this.options.db.getExport(profile.id, "gif")?.blob_key ?? null,
+              ".gif",
+            ),
+            webm: await materialize(
+              this.options.db.getExport(profile.id, "webm")?.blob_key ?? null,
+              ".webm",
+            ),
           });
         }
-        const updatedAt = captures[0]?.captured_at ?? project.updated_at;
-        const gallery = {
+        galleries.push({
           id: project.id,
           name: project.name,
           mode: project.publish_mode,
           indexable: project.publish_mode === "indexable",
           path,
-          capture_count: captures.length,
-          profile_count: profileData.length,
-          latest_thumbnail: await materialize(captures[0]?.thumbnail_key ?? null, ".webp"),
-          updated_at: updatedAt,
-          profiles: profileData,
-          profile_pages: profilePages,
-        };
-        galleryByKey[project.id] = gallery;
-        galleries.push(gallery);
-        await writePage(join(workspace, "content", path, "_index.md"), {
-          title: project.name,
-          description: `${project.name} visual history`,
-          layout: "gallery",
-          gallery_key: project.id,
-          noindex: project.publish_mode === "unlisted",
-          sitemap: { disable: project.publish_mode === "unlisted" },
-          outputs: ["HTML"],
+          captureCount: captures.length,
+          profileCount: profiles.length,
+          latestThumbnail: await materialize(captures[0]?.thumbnail_key ?? null, ".webp"),
+          updatedAt: captures[0]?.captured_at ?? project.updated_at,
+          profiles,
+          pages,
         });
       }
-      await writeJson(join(workspace, "data", "galleries.json"), galleries);
-      await writeJson(join(workspace, "data", "gallery_by_key.json"), galleryByKey);
-      await writeJson(join(workspace, "hugo.json"), {
-        baseURL: `${target.base_url}/`,
-        title: branding.title,
-        theme: basename(this.options.ryderPath),
-        disableKinds: ["taxonomy", "term"],
-        disableAliases: true,
-        disablePathToLower: true,
-        enableRobotsTXT: true,
-        outputs: { home: ["HTML", "RSS"] },
-        params: {
-          description: branding.description,
-          logoText: branding.logoText,
-          tagline: branding.tagline,
-          darkMode: branding.darkMode,
-          supplementalFooter: branding.supplementalFooter,
-          analytics: branding.analytics,
-        },
-      });
-      const runner =
-        this.options.runHugo ??
-        (async (args, options) => {
-          await execFileAsync(this.options.hugoPath, args, options);
-        });
-      await runner(
-        [
-          "--source",
-          workspace,
-          "--destination",
+
+      for (const gallery of galleries) {
+        await writeOutput(
           output,
-          "--themesDir",
-          dirname(this.options.ryderPath),
-          "--environment",
-          "production",
-          "--cleanDestinationDir",
-          "--noBuildLock",
-        ],
-        {
-          cwd: workspace,
-          timeout: this.options.timeoutMs,
-          env: { ...process.env, SOURCE_DATE_EPOCH: "0" },
-        },
-      );
-      await removeAliasPages(output);
+          `${gallery.path.replace(/^\//, "")}index.html`,
+          galleryPage(site, gallery),
+        );
+        for (const { path: pagePath, page } of gallery.pages) {
+          await writeOutput(
+            output,
+            `${pagePath.replace(/^\//, "")}index.html`,
+            profilePage(site, gallery, page),
+          );
+        }
+      }
+      await writeOutput(output, "index.html", homePage(site, galleries));
+      await writeOutput(output, "404.html", notFoundPage(site));
+      await writeOutput(output, "index.xml", rssFeed(site, galleries));
+      await writeOutput(output, "sitemap.xml", sitemapXml(site, galleries));
+      await writeOutput(output, "robots.txt", robotsTxt(site));
+
       const files = await listFiles(output);
       if (!files.some((file) => file.path === "index.html"))
-        throw new Error("Hugo did not produce a root index");
+        throw new Error("The renderer did not produce a root index");
       return {
         directory: output,
         files,

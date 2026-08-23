@@ -13,14 +13,6 @@ const schema = z.object({
   SAD_PRIVATE_TARGET_ALLOWLIST: z.string().default(""),
   SAD_TRUST_PROXY: z.enum(["true", "false"]).default("false"),
   SAD_BUILD_COMMIT: z.string().default("development"),
-  SAD_HUGO_PATH: z.string().default("hugo"),
-  SAD_RYDER_PATH: z.string().default("/opt/sad/ryder"),
-  SAD_PUBLICATION_BUILD_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .min(10_000)
-    .max(30 * 60_000)
-    .default(300_000),
   SAD_PUBLICATION_DEPLOY_TIMEOUT_MS: z.coerce
     .number()
     .int()
@@ -43,9 +35,6 @@ export interface AppConfig {
   privateTargetAllowlist: string[];
   trustProxy: boolean;
   buildCommit: string;
-  hugoPath: string;
-  ryderPath: string;
-  publicationBuildTimeoutMs: number;
   publicationDeployTimeoutMs: number;
   logLevel: string;
 }
@@ -65,9 +54,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .filter(Boolean),
     trustProxy: parsed.SAD_TRUST_PROXY === "true",
     buildCommit: parsed.SAD_BUILD_COMMIT,
-    hugoPath: parsed.SAD_HUGO_PATH,
-    ryderPath: parsed.SAD_RYDER_PATH,
-    publicationBuildTimeoutMs: parsed.SAD_PUBLICATION_BUILD_TIMEOUT_MS,
     publicationDeployTimeoutMs: parsed.SAD_PUBLICATION_DEPLOY_TIMEOUT_MS,
     logLevel: parsed.SAD_LOG_LEVEL,
   };

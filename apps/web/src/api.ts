@@ -36,7 +36,6 @@ export interface PublicationTarget {
   id: string;
   name: string;
   adapter: "vercel" | "netlify" | "sftp";
-  renderer: "hugo-ryder";
   baseUrl: string;
   branding: {
     title: string;

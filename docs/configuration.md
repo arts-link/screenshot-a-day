@@ -17,9 +17,6 @@ The API refuses to start without three independent secrets. Put them in `.env` f
 | `SAD_FFMPEG_PATH`                   | worker            | `ffmpeg`                | Export encoder executable                                                          |
 | `SAD_LOG_LEVEL`                     | API               | `info`                  | Pino log level                                                                     |
 | `SAD_BUILD_COMMIT`                  | both/images       | `development`           | Source revision exposed in diagnostics                                             |
-| `SAD_HUGO_PATH`                     | API               | `hugo`                  | Hugo executable; the API image pins Hugo Extended 0.146.2                          |
-| `SAD_RYDER_PATH`                    | API               | `/opt/sad/ryder`        | Ryder v0.4.1 theme directory bundled in the API image                              |
-| `SAD_PUBLICATION_BUILD_TIMEOUT_MS`  | API               | `300000`                | Timeout for the single concurrent static build                                     |
 | `SAD_PUBLICATION_DEPLOY_TIMEOUT_MS` | API               | `600000`                | Overall timeout for a static deployment                                            |
 
 Changing the encryption key makes existing encrypted target credentials and webhook secrets unreadable. Rotating it therefore requires a migration tool that is not included in v0.1.0.

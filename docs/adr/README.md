@@ -11,3 +11,4 @@ ADRs record decisions that are costly to reverse. Accepted ADRs are immutable; l
 7. [Comparison and animation artifacts](0007-comparison-animation.md)
 8. [Public sharing modes](0008-public-sharing.md)
 9. [Semantic releases](0009-semantic-releases.md)
+10. [Static publication rendering](0010-static-publication.md)

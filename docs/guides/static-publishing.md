@@ -1,6 +1,6 @@
 # Static gallery publishing
 
-Static targets build a complete Hugo site on the Screenshot-a-Day host and deploy identical output to an existing Vercel project, Netlify site, or dedicated SFTP directory. The home server needs outbound HTTPS and, for SFTP, outbound SSH only. It never needs an inbound public route.
+Static targets render a complete static site on the Screenshot-a-Day host and deploy identical output to an existing Vercel project, Netlify site, or dedicated SFTP directory. The home server needs outbound HTTPS and, for SFTP, outbound SSH only. It never needs an inbound public route.
 
 Create the destination site with its hosting provider first, then open **Settings → Static publication targets**. Supply its canonical URL and scoped credential. Verify the connection before attaching projects. Credentials are write-only after save.
 
@@ -14,6 +14,6 @@ The built-in gallery remains available until the first successful static deploym
 
 Vercel and Netlify deployments use their atomic full-site APIs. SFTP uploads immutable assets first, atomically replaces pages, writes the root index last, and deletes only stale paths from Screenshot-a-Day's prior manifest. The root must be empty or have the matching `.screenshot-a-day-target.json` marker.
 
-Ryder v0.4.1 is bundled behind the `hugo-ryder` renderer interface. Every generated page permanently links to the Ryder theme, Arts-Link, and Screenshot-a-Day source. Branding can add supplemental footer text but cannot remove those links. Analytics is disabled by default.
+Pages are rendered in-process; the API needs no external site generator or theme. Generated pages currently link to Arts-Link and to the Screenshot-a-Day source, and branding adds supplemental footer text alongside them. Analytics is disabled by default.
 
 Unlisted means URL secrecy, not authentication. A remote deletion cannot recall files a visitor already downloaded.

@@ -569,7 +569,7 @@ function ProjectPage() {
         <div className="section-title">
           <div>
             <p className="eyebrow">Portable static site</p>
-            <h2>Hugo / Ryder publishing</h2>
+            <h2>Static gallery publishing</h2>
           </div>
           {p.staticPublication && <Status value={p.staticPublication.state} />}
         </div>
@@ -1668,8 +1668,8 @@ function Settings() {
           <Globe2 />
           <h2>Static publication targets</h2>
           <p>
-            Hugo Extended 0.146.2 and Ryder 0.4.1 render one portable site per target. The home
-            server only makes outbound connections.
+            Screenshot-a-Day renders one portable static site per target. The home server only makes
+            outbound connections.
           </p>
           {publicationStatus.data && !publicationStatus.data.available && (
             <ErrorNotice
@@ -1814,8 +1814,7 @@ function Settings() {
               </Field>
             </div>
             <p className="field-note">
-              Ryder theme, Arts-Link, and Screenshot-a-Day source attribution is permanent on every
-              generated page.
+              Arts-Link and Screenshot-a-Day source attribution appears on every generated page.
             </p>
             <Button type="submit">Create target</Button>
           </form>
