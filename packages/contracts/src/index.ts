@@ -64,7 +64,7 @@ const sftpTargetSchema = z.object({
     root: z
       .string()
       .trim()
-      .regex(/^\/(?:[A-Za-z0-9._-]+\/?)*$/),
+      .regex(/^\/[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/),
     username: z.string().trim().min(1).max(128),
     hostKeySha256: z.string().regex(/^SHA256:[A-Za-z0-9+/]{43}=?$/),
   }),

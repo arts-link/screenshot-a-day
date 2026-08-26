@@ -1140,7 +1140,7 @@ export class AppDatabase {
           VALUES (?,?,'pending',?,0,0,NULL,NULL,?,?)`,
         )
         .run(projectId, targetId, `${target.base_url}${path}`, now, now);
-      this.markPublicationTargetDirty(targetId, project.publish_mode === "private");
+      this.markPublicationTargetDirty(targetId, true);
     })();
     return this.getProjectPublication(projectId)!;
   }
@@ -1149,9 +1149,12 @@ export class AppDatabase {
     const project = this.getProject(projectId);
     const publication = this.getProjectPublication(projectId);
     if (!project || !publication) return undefined;
-    if (project.publish_mode !== "private")
-      throw new Error("A project must be private before it can be detached");
     this.raw.transaction(() => {
+      this.raw
+        .prepare(
+          "UPDATE projects SET publish_mode='private',share_token=NULL,updated_at=? WHERE id=?",
+        )
+        .run(new Date().toISOString(), projectId);
       this.raw
         .prepare(
           "UPDATE project_publications SET state='removal_pending',detach_after_removal=1,last_error=NULL,updated_at=? WHERE project_id=?",
@@ -1160,6 +1163,21 @@ export class AppDatabase {
       this.markPublicationTargetDirty(publication.target_id, true, "remove");
     })();
     return this.getProjectPublication(projectId);
+  }
+
+  forceProjectDetachment(projectId: string): ProjectPublicationRow | undefined {
+    const publication = this.getProjectPublication(projectId);
+    if (!this.getProject(projectId) || !publication) return undefined;
+    this.raw.transaction(() => {
+      const now = new Date().toISOString();
+      this.raw
+        .prepare(
+          "UPDATE projects SET publish_mode='private',share_token=NULL,updated_at=? WHERE id=?",
+        )
+        .run(now, projectId);
+      this.raw.prepare("DELETE FROM project_publications WHERE project_id=?").run(projectId);
+    })();
+    return publication;
   }
 
   requestProjectPublicationRemoval(
@@ -1175,6 +1193,20 @@ export class AppDatabase {
         )
         .run(detach ? 1 : 0, new Date().toISOString(), projectId);
       this.markPublicationTargetDirty(publication.target_id, true, "remove");
+    })();
+    return this.getProjectPublication(projectId);
+  }
+
+  requestProjectPublicationPublish(projectId: string): ProjectPublicationRow | undefined {
+    const publication = this.getProjectPublication(projectId);
+    if (!publication) return undefined;
+    this.raw.transaction(() => {
+      this.raw
+        .prepare(
+          "UPDATE project_publications SET state=CASE WHEN last_successful_revision=0 THEN 'pending' ELSE 'active' END,detach_after_removal=0,last_error=NULL,updated_at=? WHERE project_id=?",
+        )
+        .run(new Date().toISOString(), projectId);
+      this.markPublicationTargetDirty(publication.target_id, true, "publish");
     })();
     return this.getProjectPublication(projectId);
   }
@@ -1229,13 +1261,7 @@ export class AppDatabase {
           .prepare(
             "UPDATE publication_jobs SET operation=?,desired_revision=?,available_at=?,error=NULL,updated_at=? WHERE id=?",
           )
-          .run(
-            operation === "remove" ? "remove" : existing.operation,
-            target.dirty_revision,
-            availability,
-            now,
-            existing.id,
-          );
+          .run(operation, target.dirty_revision, availability, now, existing.id);
         return existing.id;
       }
       const id = randomUUID();
@@ -1378,7 +1404,9 @@ export class AppDatabase {
 
   listPublicationJobs(targetId: string, limit = 50): PublicationJobRow[] {
     return this.raw
-      .prepare("SELECT * FROM publication_jobs WHERE target_id=? ORDER BY created_at DESC LIMIT ?")
+      .prepare(
+        "SELECT * FROM publication_jobs WHERE target_id=? ORDER BY created_at DESC,rowid DESC LIMIT ?",
+      )
       .all(targetId, limit) as PublicationJobRow[];
   }
 
@@ -1394,7 +1422,7 @@ export class AppDatabase {
     return this.raw
       .prepare(
         `SELECT * FROM publication_targets WHERE schedule_mode IN ('hourly','daily','weekly','custom')
-        AND next_run_at IS NOT NULL AND next_run_at<=? AND dirty_revision>published_revision ORDER BY next_run_at`,
+        AND next_run_at IS NOT NULL AND next_run_at<=? ORDER BY next_run_at`,
       )
       .all(now) as PublicationTargetRow[];
   }

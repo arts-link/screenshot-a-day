@@ -276,6 +276,7 @@ export function homePage(site: SiteContext, galleries: Gallery[]): string {
     <div class="hero-copy">
       <p class="eyebrow"><span>Visual histories</span> · Published archive</p>
       <h1>${h(site.branding.title)}</h1>
+      ${site.branding.tagline ? `<p class="hero-tagline">${h(site.branding.tagline)}</p>` : ""}
       ${site.branding.description ? `<p class="hero-intro">${h(site.branding.description)}</p>` : ""}
     </div>
     <div class="archive-mark" aria-hidden="true">

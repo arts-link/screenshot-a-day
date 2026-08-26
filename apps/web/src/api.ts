@@ -23,6 +23,8 @@ export interface ProjectDetail extends ProjectSummary {
 }
 export interface StaticPublication {
   targetId: string;
+  targetName: string;
+  targetAdapter: "vercel" | "netlify" | "sftp";
   url: string;
   state: "pending" | "active" | "removal_pending" | "removal_failed";
   pending: boolean;
@@ -31,6 +33,16 @@ export interface StaticPublication {
   lastSuccessfulRevision: number;
   lastError: string | null;
   removalWarning: string | null;
+  latestJob: PublicationJobSummary | null;
+}
+export type PublicationJobStatus = "queued" | "building" | "deploying" | "succeeded" | "failed";
+export interface PublicationJobSummary {
+  id: string;
+  status: PublicationJobStatus;
+  operation: "publish" | "remove";
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface PublicationTarget {
   id: string;
@@ -63,6 +75,7 @@ export interface PublicationTarget {
   lastVerifiedAt: string | null;
   lastVerificationError: string | null;
   state: string;
+  latestJob: PublicationJobSummary | null;
   projectCount: number;
   createdAt: string;
 }
@@ -160,9 +173,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ targetId }),
     }),
-  detachStaticPublication: (projectId: string) =>
-    request<{ state: string; warning: string }>(
-      `/api/v1/projects/${projectId}/static-publication`,
+  detachStaticPublication: (projectId: string, force = false) =>
+    request<{ state?: string; detached?: boolean; warning: string }>(
+      `/api/v1/projects/${projectId}/static-publication${force ? "?force=true" : ""}`,
       { method: "DELETE" },
     ),
   compare: (firstId: string, secondId: string) =>

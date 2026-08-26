@@ -47,6 +47,7 @@ import {
   AppDatabase,
   type CaptureRow,
   type ProjectRow,
+  type PublicationJobRow,
   type PublicationTargetRow,
 } from "./database.js";
 import { compareImages, thumbnail } from "./images.js";
@@ -131,8 +132,12 @@ function publicProject(project: ProjectRow, db: AppDatabase) {
 function projectPublicationDto(project: ProjectRow, db: AppDatabase) {
   const publication = db.getProjectPublication(project.id);
   if (!publication) return null;
+  const target = db.getPublicationTarget(publication.target_id);
+  const latestJob = db.listPublicationJobs(publication.target_id, 1)[0];
   return {
     targetId: publication.target_id,
+    targetName: target?.name ?? "Unknown target",
+    targetAdapter: target?.adapter ?? "vercel",
     url: publication.gallery_url,
     state: publication.state,
     pending: publication.state !== "active",
@@ -144,6 +149,18 @@ function projectPublicationDto(project: ProjectRow, db: AppDatabase) {
       publication.state === "removal_pending" || publication.state === "removal_failed"
         ? "Remote files may remain available until removal succeeds."
         : null,
+    latestJob: latestJob ? publicationJobSummary(latestJob) : null,
+  };
+}
+
+function publicationJobSummary(job: PublicationJobRow) {
+  return {
+    id: job.id,
+    status: job.status,
+    operation: job.operation,
+    error: job.error,
+    createdAt: job.created_at,
+    updatedAt: job.updated_at,
   };
 }
 
@@ -177,6 +194,7 @@ function publicationTargetDto(target: PublicationTargetRow, db: AppDatabase) {
     lastVerifiedAt: target.last_verified_at,
     lastVerificationError: target.last_verification_error,
     state,
+    latestJob: latest ? publicationJobSummary(latest) : null,
     projectCount: db.listTargetProjectPublications(target.id).length,
     createdAt: target.created_at,
   };
@@ -508,12 +526,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       const current = db.getProject(request.params.id);
       const project = db.updatePublication(request.params.id, body.publishMode, body.rotate);
       if (project && db.getProjectPublication(project.id)) {
-        const sensitive =
-          body.publishMode === "private" ||
-          body.rotate ||
-          current?.publish_mode !== body.publishMode;
-        if (sensitive) db.requestProjectPublicationRemoval(project.id);
-        else db.markProjectPublicationDirty(project.id);
+        const changed = current?.publish_mode !== body.publishMode;
+        if (body.publishMode === "private" && changed)
+          db.requestProjectPublicationRemoval(project.id);
+        else if (changed || body.rotate) db.requestProjectPublicationPublish(project.id);
       }
       return project
         ? {
@@ -540,17 +556,26 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       }
     },
   );
-  app.delete<{ Params: { id: string } }>(
+  app.delete<{ Params: { id: string }; Querystring: { force?: string } }>(
     "/api/v1/projects/:id/static-publication",
     async (request, reply) => {
       if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
       try {
-        const publication = db.requestProjectDetachment(request.params.id);
+        const force = request.query.force === "true";
+        const publication = force
+          ? db.forceProjectDetachment(request.params.id)
+          : db.requestProjectDetachment(request.params.id);
         return publication
-          ? reply.code(202).send({
-              state: publication.state,
-              warning: "Detachment completes only after remote removal succeeds",
-            })
+          ? force
+            ? reply.code(200).send({
+                detached: true,
+                warning:
+                  "Local management was removed without confirming remote cleanup. Deployed files may remain publicly accessible.",
+              })
+            : reply.code(202).send({
+                state: publication.state,
+                warning: "Detachment completes only after remote removal succeeds",
+              })
           : reply.code(404).send({ error: "Static publication is not attached" });
       } catch (error) {
         return reply
@@ -599,6 +624,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       const input = publicationTargetUpdateSchema.parse(request.body);
       if (input.baseUrl) {
         const base = new URL(input.baseUrl);
+        if (current.adapter !== "sftp" && base.protocol !== "https:")
+          return reply
+            .code(400)
+            .send({ error: "Vercel and Netlify publication URLs must use HTTPS" });
         if ((base.pathname && base.pathname !== "/") || base.search || base.hash)
           return reply.code(400).send({
             error: "The canonical base URL must be an origin without a path, query, or fragment",

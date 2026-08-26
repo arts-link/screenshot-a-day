@@ -79,7 +79,8 @@ export class PublicationService {
     this.running = true;
     try {
       for (const target of this.options.db.listDuePublicationTargets()) {
-        this.options.db.enqueuePublication(target.id, "publish", true);
+        if (target.dirty_revision > target.published_revision)
+          this.options.db.enqueuePublication(target.id, "publish", true);
         this.options.db.setPublicationNextRun(
           target.id,
           nextPublicationRun(
