@@ -179,6 +179,7 @@ describe("static gallery publication renderer", () => {
       const root = await readFile(join(first.directory, "index.html"), "utf8");
       expect(root).toContain("Visual histories");
       expect(root).toContain("Escaped &lt;Studio&gt; &amp; history");
+      expect(root).toContain("Recorded daily");
       expect(root).not.toContain("Latest stuff");
       const gallery = await readFile(join(first.directory, "p/studio-history/index.html"), "utf8");
       expect(gallery).toContain("Escaped &lt;Studio&gt; &amp; history");

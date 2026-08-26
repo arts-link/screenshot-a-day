@@ -15,7 +15,7 @@ describe("publication queue", () => {
     }
   });
 
-  async function fixture(scheduleMode: "manual" | "on_change" = "on_change") {
+  async function fixture(scheduleMode: "manual" | "on_change" | "hourly" = "on_change") {
     const directory = await mkdtemp(join(tmpdir(), "sad-publication-queue-"));
     const db = new AppDatabase(join(directory, "sad.sqlite"));
     databases.push({ db, directory });
@@ -122,5 +122,13 @@ describe("publication queue", () => {
       attempts: 5,
       error: "failure 5",
     });
+  });
+
+  it("advances due scheduled targets even when there is nothing to publish", async () => {
+    const { db, target } = await fixture("hourly");
+    db.setPublicationNextRun(target.id, new Date(0).toISOString());
+    expect(db.listDuePublicationTargets()).toEqual([
+      expect.objectContaining({ id: target.id, dirty_revision: 0, published_revision: 0 }),
+    ]);
   });
 });

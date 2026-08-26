@@ -198,6 +198,164 @@ describe("control plane", () => {
     expect(detached.statusCode).toBe(202);
   });
 
+  it("publishes immediately on attach and never labels public visibility changes as removal", async () => {
+    const project = (await createFixtureProject("publication-transitions")).json<{ id: string }>();
+    const target = (await createVercelTarget()).json<{ id: string }>();
+    const cookie = `sad_session=${sessionToken}`;
+    const attached = await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+      payload: { targetId: target.id },
+    });
+    expect(attached.json()).toMatchObject({
+      targetName: "Static history",
+      targetAdapter: "vercel",
+      latestJob: { operation: "publish", status: "queued" },
+    });
+    const initialJob = db.claimPublicationJob()!;
+    db.completePublicationJob(initialJob, {
+      deploymentId: "dpl_private",
+      deploymentUrl: "https://history.example.com",
+      manifest: { files: [] },
+    });
+
+    const publicResponse = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "indexable" },
+    });
+    expect(publicResponse.json()).toMatchObject({
+      staticPublication: {
+        state: "active",
+        latestJob: { operation: "publish", status: "queued" },
+      },
+    });
+
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "private" },
+    });
+    expect(db.listPublicationJobs(target.id, 1)[0]).toMatchObject({ operation: "remove" });
+
+    const restored = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "unlisted" },
+    });
+    expect(restored.json()).toMatchObject({
+      staticPublication: {
+        state: "active",
+        latestJob: { operation: "publish", status: "queued" },
+      },
+    });
+  });
+
+  it("makes public projects private during normal detach and supports force detach", async () => {
+    const cookie = `sad_session=${sessionToken}`;
+    const target = (await createVercelTarget()).json<{ id: string }>();
+    const project = (await createFixtureProject("detach-directly")).json<{ id: string }>();
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "indexable" },
+    });
+    await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+      payload: { targetId: target.id },
+    });
+    const publishJob = db.claimPublicationJob()!;
+    db.completePublicationJob(publishJob, {
+      deploymentId: "dpl_public",
+      deploymentUrl: "https://history.example.com",
+      manifest: { files: [] },
+    });
+
+    const detached = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+    });
+    expect(detached.statusCode).toBe(202);
+    expect(db.getProject(project.id)?.publish_mode).toBe("private");
+    expect(db.getProjectPublication(project.id)).toMatchObject({
+      state: "removal_pending",
+      detach_after_removal: 1,
+    });
+
+    const second = (await createFixtureProject("force-detach")).json<{ id: string }>();
+    await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${second.id}/static-publication`,
+      headers: { cookie },
+      payload: { targetId: target.id },
+    });
+    const forced = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${second.id}/static-publication?force=true`,
+      headers: { cookie },
+    });
+    expect(forced.statusCode).toBe(200);
+    expect(forced.json()).toMatchObject({ detached: true });
+    expect(db.getProject(second.id)?.publish_mode).toBe("private");
+    expect(db.getProjectPublication(second.id)).toBeUndefined();
+  });
+
+  it("exposes failed remote removal and queues a retry", async () => {
+    const cookie = `sad_session=${sessionToken}`;
+    const project = (await createFixtureProject("retry-removal")).json<{ id: string }>();
+    const target = (await createVercelTarget()).json<{ id: string }>();
+    await app.inject({
+      method: "PUT",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+      payload: { targetId: target.id },
+    });
+    const publishJob = db.claimPublicationJob()!;
+    db.completePublicationJob(publishJob, {
+      deploymentId: "dpl_private",
+      deploymentUrl: "https://history.example.com",
+      manifest: { files: [] },
+    });
+    await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+    });
+    const removalJob = db.claimPublicationJob()!;
+    db.raw.prepare("UPDATE publication_jobs SET attempts=5 WHERE id=?").run(removalJob.id);
+    db.failPublicationJob({ ...removalJob, attempts: 5 }, "Invalid token");
+
+    const failed = await app.inject({
+      url: `/api/v1/projects/${project.id}`,
+      headers: { cookie },
+    });
+    expect(failed.json()).toMatchObject({
+      staticPublication: {
+        state: "removal_failed",
+        lastError: "Invalid token",
+        latestJob: { operation: "remove", status: "failed" },
+      },
+    });
+    await app.inject({
+      method: "DELETE",
+      url: `/api/v1/projects/${project.id}/static-publication`,
+      headers: { cookie },
+    });
+    expect(db.getProjectPublication(project.id)?.state).toBe("removal_pending");
+    expect(db.listPublicationJobs(target.id, 1)[0]).toMatchObject({
+      operation: "remove",
+      status: "queued",
+    });
+  });
+
   it("creates a project, leases its capture, and records a failure", async () => {
     const cookie = `sad_session=${sessionToken}`;
     const created = await app.inject({
@@ -652,6 +810,56 @@ describe("control plane", () => {
     ]) {
       expect((await request).statusCode).toBe(401);
     }
+  });
+
+  it("keeps remote publication destinations within their secure boundaries", async () => {
+    const cookie = `sad_session=${sessionToken}`;
+    const target = (await createVercelTarget()).json<{ id: string }>();
+    const downgraded = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/publication-targets/${target.id}`,
+      headers: { cookie },
+      payload: { baseUrl: "http://history.example.com" },
+    });
+    expect(downgraded.statusCode).toBe(400);
+    expect(downgraded.json<{ error: string }>().error).toContain("HTTPS");
+
+    const unsafeRoot = await app.inject({
+      method: "POST",
+      url: "/api/v1/publication-targets",
+      headers: { cookie },
+      payload: {
+        name: "Unsafe SFTP",
+        baseUrl: "https://history.example.com",
+        scheduleMode: "manual",
+        scheduleExpression: null,
+        scheduleTimezone: "UTC",
+        branding: {
+          title: "History",
+          description: "",
+          logoText: null,
+          logoUrl: null,
+          tagline: "",
+          accentColor: "#dbff53",
+          backgroundColor: "#10151d",
+          darkMode: true,
+          supplementalFooter: "",
+          analytics: { provider: "none" },
+        },
+        target: {
+          adapter: "sftp",
+          config: {
+            host: "sftp.example.com",
+            port: 22,
+            root: "/",
+            username: "publisher",
+            hostKeySha256: `SHA256:${"a".repeat(43)}`,
+          },
+          credentials: { kind: "password", password: "secret" },
+        },
+      },
+    });
+    expect(unsafeRoot.statusCode).toBe(400);
   });
 
   it("returns a client error for blocked target addresses", async () => {
