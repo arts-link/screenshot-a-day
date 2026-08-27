@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppDatabase } from "../src/database.js";
-import { StaticGalleryRenderer } from "../src/publication-renderer.js";
+import { STATIC_GALLERY_PAGE_SIZE, StaticGalleryRenderer } from "../src/publication-renderer.js";
 import { LocalBlobStore } from "../src/storage.js";
 
 const templateRoot = fileURLToPath(new URL("../static-gallery", import.meta.url));
@@ -98,28 +98,33 @@ describe("static gallery publication renderer", () => {
       "unused",
       new Date().toISOString(),
     );
-    const runId = db.enqueueRun(project.id, "manual");
-    const job = db.claimJob()!;
     const image = Buffer.from("fixture-image");
     const thumbnail = Buffer.from("fixture-thumbnail");
-    await blobs.put("captures/fixture.png", image);
-    await blobs.put("thumbnails/fixture.webp", thumbnail);
-    db.recordCapture(job, {
-      status: "succeeded",
-      captured_at: "2026-08-17T12:00:00.000Z",
-      final_url: "https://example.com",
-      http_status: 200,
-      width: 1440,
-      height: 900,
-      sha256: "fixture",
-      change_percent: null,
-      image_key: "captures/fixture.png",
-      thumbnail_key: "thumbnails/fixture.webp",
-      diff_key: null,
-      error: null,
-      duration_ms: 100,
-    });
-    expect(runId).toBe(job.run_id);
+    expect(STATIC_GALLERY_PAGE_SIZE).toBe(12);
+    for (let index = 0; index < 13; index += 1) {
+      const runId = db.enqueueRun(project.id, "manual");
+      const job = db.claimJob()!;
+      const imageKey = `captures/fixture-${index}.png`;
+      const thumbnailKey = `thumbnails/fixture-${index}.webp`;
+      await blobs.put(imageKey, image);
+      await blobs.put(thumbnailKey, thumbnail);
+      db.recordCapture(job, {
+        status: "succeeded",
+        captured_at: `2026-08-${String(index + 1).padStart(2, "0")}T12:00:00.000Z`,
+        final_url: "https://example.com",
+        http_status: 200,
+        width: 1440,
+        height: 900,
+        sha256: `fixture-${index}`,
+        change_percent: index ? index / 10 : null,
+        image_key: imageKey,
+        thumbnail_key: thumbnailKey,
+        diff_key: null,
+        error: null,
+        duration_ms: 100,
+      });
+      expect(runId).toBe(job.run_id);
+    }
     const target = db.createPublicationTarget(
       {
         name: "Fixture target",
@@ -166,6 +171,7 @@ describe("static gallery publication renderer", () => {
           "sitemap.xml",
           "p/studio-history/index.html",
           `p/studio-history/desktop/page/1/index.html`,
+          `p/studio-history/desktop/page/2/index.html`,
         ]),
       );
       const htmlFiles = first.files.filter((file) => file.path.endsWith(".html"));
@@ -187,6 +193,22 @@ describe("static gallery publication renderer", () => {
       expect(gallery).not.toContain("noindex");
       // Attribute context: an unescaped project name here would break out of alt="".
       expect(gallery).not.toMatch(/alt="[^"]*<Studio>/);
+      const profile = await readFile(
+        join(first.directory, "p/studio-history/desktop/page/1/index.html"),
+        "utf8",
+      );
+      expect(profile.match(/data-capture-card/g)).toHaveLength(12);
+      expect(profile).toContain("Browser-only split");
+      expect(profile).toContain("data-comparison-scope=");
+      expect(profile).toContain('data-slot="earlier"');
+      expect(profile).toContain('data-slot="later"');
+      expect(profile).toContain("data-compare-id=");
+      const secondPage = await readFile(
+        join(first.directory, "p/studio-history/desktop/page/2/index.html"),
+        "utf8",
+      );
+      expect(secondPage.match(/data-capture-card/g)).toHaveLength(1);
+      expect(secondPage).toContain("← Newer");
       const robots = await readFile(join(first.directory, "robots.txt"), "utf8");
       expect(robots).toContain("Disallow: /s/");
       expect(robots).toContain("Sitemap: https://history.example.com/sitemap.xml");

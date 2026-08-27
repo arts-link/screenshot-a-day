@@ -20,7 +20,7 @@ import {
   type SiteContext,
 } from "./publication-templates.js";
 
-const PAGE_SIZE = 24;
+export const STATIC_GALLERY_PAGE_SIZE = 12;
 const FONT_FILES = [
   "dm-sans-latin-ext.woff2",
   "dm-sans-latin.woff2",
@@ -212,12 +212,15 @@ export class StaticGalleryRenderer implements PublicationRenderer {
           const collisions = usedSlugs.get(base) ?? 0;
           usedSlugs.set(base, collisions + 1);
           const profileSlug = collisions === 0 ? base : `${base}-${collisions + 1}`;
-          const pageCount = Math.ceil(history.length / PAGE_SIZE);
+          const pageCount = Math.ceil(history.length / STATIC_GALLERY_PAGE_SIZE);
           const profilePaths: string[] = [];
           for (let page = 1; page <= pageCount; page++) {
             const pagePath = `${path}${profileSlug}/page/${page}/`;
             const frames: CaptureFrame[] = [];
-            for (const capture of history.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)) {
+            for (const capture of history.slice(
+              (page - 1) * STATIC_GALLERY_PAGE_SIZE,
+              page * STATIC_GALLERY_PAGE_SIZE,
+            )) {
               frames.push({
                 id: capture.id,
                 capturedAt: capture.captured_at,
@@ -230,6 +233,7 @@ export class StaticGalleryRenderer implements PublicationRenderer {
             pages.push({
               path: pagePath,
               page: {
+                id: profile.id,
                 name: profile.name,
                 browser: profile.browser,
                 page,

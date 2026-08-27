@@ -10,6 +10,7 @@ export interface CaptureFrame {
 }
 
 export interface ProfilePage {
+  id: string;
   name: string;
   browser: string;
   page: number;
@@ -346,7 +347,10 @@ ${cards}
 export function profilePage(site: SiteContext, gallery: Gallery, profile: ProfilePage): string {
   const cards = profile.captures
     .map(
-      (capture, index) => `  <article class="capture-card">
+      (
+        capture,
+        index,
+      ) => `  <article class="capture-card" data-capture-card data-capture-id="${h(capture.id)}">
     <button class="image-button" data-lightbox="/${h(capture.image)}" data-caption="${h(capture.capturedAt)}">
       <img loading="lazy" src="/${h(capture.thumbnail)}" alt="Capture from ${h(capture.capturedAt)}" />
     </button>
@@ -355,7 +359,7 @@ export function profilePage(site: SiteContext, gallery: Gallery, profile: Profil
       <strong>${capture.changePercent === null ? "Opening frame" : `${h(capture.changePercent.toFixed(3))}% changed`}</strong>
       <div class="capture-actions">
         ${capture.diff ? `<a href="/${h(capture.diff)}">Diff →</a>` : ""}
-        <label class="compare"><input type="checkbox" data-compare="/${h(capture.image)}" /> Compare</label>
+        <button type="button" class="compare" data-compare-id="${h(capture.id)}" data-compare-image="/${h(capture.image)}" data-compare-date="${h(capture.capturedAt)}">Select to compare</button>
       </div>
     </div>
   </article>`,
@@ -374,18 +378,23 @@ export function profilePage(site: SiteContext, gallery: Gallery, profile: Profil
   <h1>${h(profile.name)}</h1>
   <p class="hero-intro">Page ${profile.page} of ${profile.pages}</p>
 </section>
-<section class="gallery-section">
-  <div class="section-heading"><p class="eyebrow">Recorded frames</p><span>Select two to compare</span></div>
-  <div class="capture-grid">
-${cards}
+<section class="browser-compare" data-comparison-workspace data-comparison-scope="${h(`${gallery.id}:${profile.id}`)}">
+  <div class="section-heading"><p class="eyebrow">Browser-only split</p><span>Choose Earlier and Later</span></div>
+  <div class="comparison-tray" aria-label="Comparison selection">
+    <div class="compare-slot active" data-slot="earlier"><div><span>Earlier</span><strong data-slot-value>Choose the earlier frame</strong></div><div class="slot-actions"><button type="button" data-slot-change="earlier" hidden>Change</button><button type="button" data-slot-remove="earlier" hidden>Remove</button></div></div>
+    <div class="compare-slot" data-slot="later"><div><span>Later</span><strong data-slot-value>Choose the later frame</strong></div><div class="slot-actions"><button type="button" data-slot-change="later" hidden>Change</button><button type="button" data-slot-remove="later" hidden>Remove</button></div></div>
   </div>
-</section>
-<section class="browser-compare" hidden>
-  <div class="section-heading"><p class="eyebrow">Browser-only comparison</p><span>Drag to compare</span></div>
-  <div>
+  <p class="comparison-empty" data-comparison-empty>Selections persist while you move between pages in this profile.</p>
+  <div class="split-result" data-split-result hidden>
     <img data-before alt="First selected screenshot" /><span
       ><img data-after alt="Second selected screenshot" /></span
     ><input type="range" min="0" max="100" value="50" aria-label="Comparison split" />
+  </div>
+</section>
+<section class="gallery-section">
+  <div class="section-heading"><p class="eyebrow">Recorded frames</p><span>12 frames per page</span></div>
+  <div class="capture-grid">
+${cards}
   </div>
 </section>
 <nav class="pagination">

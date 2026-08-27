@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   Link,
   Navigate,
@@ -13,7 +13,7 @@ import {
   useParams,
 } from "react-router-dom";
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
-import { api, type Comparison } from "./api";
+import { api, type Comparison, type ProjectDetail } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
 import {
   AccentRule,
@@ -30,6 +30,19 @@ import {
 } from "./components";
 import { publicationInFlight, publicationStatus } from "./publication-status";
 import { PublicationSettings } from "./publication-settings";
+import {
+  CAPTURES_PER_PAGE,
+  changeComparisonSlot,
+  emptyComparisonSelection,
+  paginateCaptures,
+  removeComparisonSlot,
+  selectCapture,
+  selectionRole,
+  successfulCaptures,
+  validComparisonPair,
+  type ComparisonSelection,
+  type ComparisonSlot,
+} from "./comparison-selection";
 
 const ARTS_LINK_URL = "https://www.arts-link.com/";
 
@@ -200,7 +213,7 @@ function Dashboard() {
       {projects.data?.length ? (
         <div className="project-grid">
           {projects.data.map((project) => (
-            <Link className="project-card" to={`/projects/${project.id}`} key={project.id}>
+            <Link className="project-card" to={`/projects/${project.id}/compare`} key={project.id}>
               <div className="project-top">
                 <AccentRule />
                 <Badge tone={project.publishMode === "indexable" ? "accent" : "neutral"}>
@@ -432,18 +445,129 @@ function ConfirmationDialog({
   );
 }
 
-function ProjectPage() {
+function ProjectHeader({ project, action }: { project: ProjectDetail; action?: ReactNode }) {
+  return (
+    <>
+      <header className="page-head project-header">
+        <div>
+          <Link to="/" className="back-link">
+            ← All projects
+          </Link>
+          <Eyebrow>{project.publishMode} timeline</Eyebrow>
+          <h1>{project.name}</h1>
+          <a href={project.url} target="_blank" rel="noreferrer">
+            {project.url} ↗
+          </a>
+        </div>
+        {action}
+      </header>
+      <nav className="project-tabs" aria-label="Project workspace">
+        <NavLink to={`/projects/${project.id}/compare`}>Compare</NavLink>
+        <NavLink to={`/projects/${project.id}/configuration`}>Configuration</NavLink>
+      </nav>
+    </>
+  );
+}
+
+function ComparisonTray({
+  selection,
+  onChange,
+  onRemove,
+}: {
+  selection: ComparisonSelection<CaptureRecord>;
+  onChange: (slot: ComparisonSlot) => void;
+  onRemove: (slot: ComparisonSlot) => void;
+}) {
+  return (
+    <div className="comparison-tray" aria-label="Comparison selection">
+      {(["earlier", "later"] as const).map((slot) => {
+        const capture = selection[slot];
+        const active = selection.active === slot;
+        return (
+          <div
+            className={`compare-slot ${active ? "active" : ""} ${capture ? "filled" : ""}`}
+            key={slot}
+          >
+            <div>
+              <span>{slot}</span>
+              <strong>
+                {capture
+                  ? new Date(capture.capturedAt).toLocaleString()
+                  : `Choose the ${slot} frame`}
+              </strong>
+            </div>
+            {capture ? (
+              <div className="slot-actions">
+                <button type="button" onClick={() => onChange(slot)}>
+                  Change
+                </button>
+                <button type="button" onClick={() => onRemove(slot)}>
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <small>{active ? "Select a capture below" : "Waiting for the first choice"}</small>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function AutomaticComparison({
+  selection,
+  compare,
+  scope,
+}: {
+  selection: ComparisonSelection<CaptureRecord>;
+  compare: (first: string, second: string) => Promise<Comparison>;
+  scope: string;
+}) {
+  const pair = validComparisonPair(selection);
+  const comparison = useQuery({
+    queryKey: ["comparison", scope, pair?.[0].id, pair?.[1].id],
+    queryFn: () => compare(pair![0].id, pair![1].id),
+    enabled: Boolean(pair),
+  });
+  return (
+    <div className="comparison-output" aria-live="polite">
+      {!pair ? (
+        <div className="comparison-placeholder">
+          Choose Earlier and Later to generate a pixel comparison automatically.
+        </div>
+      ) : comparison.isLoading ? (
+        <div className="comparison-placeholder">
+          <Spinner /> Comparing pixels…
+        </div>
+      ) : comparison.error ? (
+        <ErrorNotice error={comparison.error} />
+      ) : comparison.data ? (
+        <ComparisonResult comparison={comparison.data} />
+      ) : null}
+    </div>
+  );
+}
+
+function ProjectComparePage() {
   const { id = "" } = useParams();
   const client = useQueryClient();
-  const project = useQuery({
-    queryKey: ["project", id],
-    queryFn: () => api.project(id),
-    refetchInterval: (query) =>
-      publicationInFlight(query.state.data?.staticPublication) ? 1500 : false,
-  });
+  const [profileId, setProfileId] = useState<string>();
+  const [page, setPage] = useState(0);
+  const [selection, setSelection] =
+    useState<ComparisonSelection<CaptureRecord>>(emptyComparisonSelection);
+  const [error, setError] = useState<unknown>();
+  const [requestedRunId, setRequestedRunId] = useState<string>();
+  const captureLock = useRef(false);
+  const project = useQuery({ queryKey: ["project", id], queryFn: () => api.project(id) });
+  const activeProfile =
+    project.data?.profiles.find((profile) => profile.id === profileId) ??
+    project.data?.profiles.find((profile) => profile.settings.enabled) ??
+    project.data?.profiles[0];
   const captures = useQuery({
-    queryKey: ["captures", id],
-    queryFn: () => api.captures(id),
+    queryKey: ["captures", id, activeProfile?.id],
+    queryFn: () => api.captures(id, activeProfile!.id, 500),
+    enabled: Boolean(activeProfile),
     refetchInterval: 5000,
   });
   const runs = useQuery({
@@ -451,17 +575,6 @@ function ProjectPage() {
     queryFn: () => api.runs(id),
     refetchInterval: 1500,
   });
-  const publicationTargets = useQuery({
-    queryKey: ["publication-targets"],
-    queryFn: api.publicationTargets,
-  });
-  const [selected, setSelected] = useState<string[]>([]);
-  const [compare, setCompare] = useState<Comparison>();
-  const [error, setError] = useState<unknown>();
-  const [publicationAction, setPublicationAction] = useState<string>();
-  const [detachDialog, setDetachDialog] = useState<"remote" | "force">();
-  const [requestedRunId, setRequestedRunId] = useState<string>();
-  const captureLock = useRef(false);
   const trigger = useMutation({
     mutationFn: (idempotencyKey: string) => api.trigger(id, idempotencyKey),
     onSuccess: async ({ runId }) => {
@@ -499,12 +612,178 @@ function ProjectPage() {
     return () => window.clearTimeout(reset);
   }, [client, id, requestedRun]);
 
+  if (project.isLoading) return <Splash />;
+  if (!project.data) return <ErrorNotice error={project.error} />;
+  const successful = successfulCaptures(captures.data ?? []);
+  const failedCount = (captures.data?.length ?? 0) - successful.length;
+  const pageCount = Math.max(1, Math.ceil(successful.length / CAPTURES_PER_PAGE));
+  const visible = paginateCaptures(successful, Math.min(page, pageCount - 1));
   const requestCapture = () => {
     if (captureLock.current || captureBusy) return;
     captureLock.current = true;
     setError(undefined);
     trigger.mutate(crypto.randomUUID());
   };
+  const changeProfile = (nextProfileId: string) => {
+    setProfileId(nextProfileId);
+    setPage(0);
+    setSelection(emptyComparisonSelection());
+  };
+  return (
+    <>
+      <ProjectHeader
+        project={project.data}
+        action={
+          <div className="capture-action">
+            <Button
+              onClick={requestCapture}
+              disabled={captureBusy || captureAcknowledging || runs.isLoading}
+              aria-busy={captureBusy}
+            >
+              {captureBusy && <Spinner />}
+              {runs.isLoading ? "Checking queue…" : `${captureLabel} →`}
+            </Button>
+            <span className="capture-action-status" role="status" aria-live="polite">
+              {captureDetail ?? "Queues one batch across every enabled profile."}
+            </span>
+          </div>
+        }
+      />
+      <ErrorNotice error={error ?? captures.error ?? runs.error} />
+      {activeProfile ? (
+        <section className="comparison-workspace">
+          <div className="workspace-toolbar">
+            <div>
+              <Eyebrow>Pixel comparison</Eyebrow>
+              <h2>Compare two captures</h2>
+              <p>Choose a profile, then pick an earlier and later moment from its history.</p>
+            </div>
+            <div className="workspace-actions">
+              <Field label="Capture profile">
+                <select
+                  value={activeProfile.id}
+                  onChange={(event) => changeProfile(event.target.value)}
+                >
+                  {project.data.profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                      {profile.settings.enabled ? "" : " · disabled"}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="export-actions">
+                <Button
+                  variant="secondary"
+                  onClick={() => api.createExport(id, activeProfile.id, "gif").catch(setError)}
+                >
+                  GIF ↓
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => api.createExport(id, activeProfile.id, "webm").catch(setError)}
+                >
+                  WebM ↓
+                </Button>
+              </div>
+            </div>
+          </div>
+          <ComparisonTray
+            selection={selection}
+            onChange={(slot) => setSelection((current) => changeComparisonSlot(current, slot))}
+            onRemove={(slot) => setSelection((current) => removeComparisonSlot(current, slot))}
+          />
+          <AutomaticComparison selection={selection} compare={api.compare} scope={`admin:${id}`} />
+          <div className="capture-browser-heading">
+            <div>
+              <Eyebrow tone="muted">{activeProfile.browser}</Eyebrow>
+              <h2>{activeProfile.name} history</h2>
+            </div>
+            <div className="capture-browser-meta">
+              <span>{successful.length} comparable captures</span>
+              {failedCount > 0 && (
+                <span>
+                  {failedCount} failed {failedCount === 1 ? "attempt is" : "attempts are"}{" "}
+                  unavailable
+                </span>
+              )}
+            </div>
+          </div>
+          {captures.isLoading ? (
+            <div className="comparison-placeholder">
+              <Spinner /> Loading captures…
+            </div>
+          ) : visible.length ? (
+            <div className="capture-grid">
+              {visible.map((capture) => {
+                const role = selectionRole(selection, capture.id);
+                return (
+                  <CaptureCard
+                    key={capture.id}
+                    capture={capture}
+                    role={role}
+                    disabled={!role && !selection.active}
+                    onSelect={() =>
+                      role
+                        ? setSelection((current) => removeComparisonSlot(current, role))
+                        : setSelection((current) => selectCapture(current, capture))
+                    }
+                  />
+                );
+              })}
+            </div>
+          ) : (
+            <Empty title="No comparable captures">
+              Successful captures for this profile will appear here.
+            </Empty>
+          )}
+          {successful.length > CAPTURES_PER_PAGE && (
+            <nav className="capture-pagination" aria-label="Capture history pages">
+              <Button
+                variant="secondary"
+                disabled={page === 0}
+                onClick={() => setPage((current) => Math.max(0, current - 1))}
+              >
+                ← Newer
+              </Button>
+              <span>
+                Page {Math.min(page, pageCount - 1) + 1} of {pageCount}
+              </span>
+              <Button
+                variant="secondary"
+                disabled={page >= pageCount - 1}
+                onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+              >
+                Older →
+              </Button>
+            </nav>
+          )}
+        </section>
+      ) : (
+        <Empty title="No capture profiles">
+          Add a profile in Configuration before comparing captures.
+        </Empty>
+      )}
+    </>
+  );
+}
+
+function ProjectConfigurationPage() {
+  const { id = "" } = useParams();
+  const client = useQueryClient();
+  const project = useQuery({
+    queryKey: ["project", id],
+    queryFn: () => api.project(id),
+    refetchInterval: (query) =>
+      publicationInFlight(query.state.data?.staticPublication) ? 1500 : false,
+  });
+  const publicationTargets = useQuery({
+    queryKey: ["publication-targets"],
+    queryFn: api.publicationTargets,
+  });
+  const [error, setError] = useState<unknown>();
+  const [publicationAction, setPublicationAction] = useState<string>();
+  const [detachDialog, setDetachDialog] = useState<"remote" | "force">();
   const refreshPublication = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: ["project", id] }),
@@ -524,14 +803,6 @@ function ProjectPage() {
       setPublicationAction(undefined);
     }
   };
-  const grouped = useMemo(
-    () =>
-      project.data?.profiles.map((profile) => ({
-        profile,
-        captures: captures.data?.filter((capture) => capture.profileId === profile.id) ?? [],
-      })) ?? [],
-    [project.data, captures.data],
-  );
   if (project.isLoading) return <Splash />;
   if (!project.data) return <ErrorNotice error={project.error} />;
   const p = project.data;
@@ -549,53 +820,24 @@ function ProjectPage() {
   const publicationBusy = Boolean(publicationAction || staticStatus?.busy);
   return (
     <>
-      <header className="page-head project-header">
-        <div>
-          <Link to="/" className="back-link">
-            ← All projects
-          </Link>
-          <Eyebrow>{p.publishMode} timeline</Eyebrow>
-          <h1>{p.name}</h1>
-          <a href={p.url} target="_blank" rel="noreferrer">
-            {p.url} ↗
-          </a>
-        </div>
-        <div className="capture-action">
-          <Button
-            onClick={requestCapture}
-            disabled={captureBusy || captureAcknowledging || runs.isLoading}
-            aria-busy={captureBusy}
-          >
-            {captureBusy && <Spinner />}
-            {runs.isLoading ? "Checking queue…" : `${captureLabel} →`}
-          </Button>
-          <span className="capture-action-status" role="status" aria-live="polite">
-            {captureDetail ?? "Queues one batch across every enabled profile."}
-          </span>
-        </div>
-      </header>
-      <ErrorNotice error={error ?? captures.error ?? runs.error} />
+      <ProjectHeader project={p} />
+      <ErrorNotice error={error ?? publicationTargets.error} />
       <div className="metric-row">
         <div className="metric">
           <span>Profiles</span>
           <strong>{p.profiles.length}</strong>
         </div>
         <div className="metric">
-          <span>Captures</span>
-          <strong>{captures.data?.length ?? 0}</strong>
+          <span>Visibility</span>
+          <strong>{p.publishMode}</strong>
         </div>
         <div className="metric">
           <span>Schedule</span>
           <strong>{p.scheduleEnabled ? "Active" : "Paused"}</strong>
         </div>
         <div className="metric">
-          <span>Last change</span>
-          <strong>
-            {captures.data
-              ?.find((capture) => capture.changePercent != null)
-              ?.changePercent?.toFixed(2) ?? "—"}
-            {captures.data?.some((capture) => capture.changePercent != null) ? "%" : ""}
-          </strong>
+          <span>Retention</span>
+          <strong>{p.retentionCount ?? p.retentionDays ?? "All"}</strong>
         </div>
       </div>
       <Card className="publishing-card">
@@ -603,8 +845,8 @@ function ProjectPage() {
           <div className="publishing-title">
             <AccentRule />
             <div>
-              <Eyebrow tone="muted">Visibility and delivery</Eyebrow>
-              <h2>Publishing</h2>
+              <Eyebrow tone="muted">01 · Visibility and delivery</Eyebrow>
+              <h2>Publishing and visibility</h2>
             </div>
           </div>
           <div className="segmented" aria-label="Gallery visibility">
@@ -799,94 +1041,33 @@ function ProjectPage() {
           </ConfirmationDialog>
         </>
       )}
+      <section className="configuration-section">
+        <div className="configuration-heading">
+          <div>
+            <Eyebrow tone="muted">02</Eyebrow>
+            <h2>Capture profiles</h2>
+          </div>
+          <p>Define the browser and viewport contexts captured for this project.</p>
+        </div>
+        <div className="profile-config-list">
+          {p.profiles.map((profile) => (
+            <ProfileSettings
+              key={profile.id}
+              projectId={id}
+              profile={profile}
+              onChanged={() => client.invalidateQueries({ queryKey: ["project", id] })}
+            />
+          ))}
+        </div>
+        <AddProfileForm
+          projectId={id}
+          onChanged={() => client.invalidateQueries({ queryKey: ["project", id] })}
+        />
+      </section>
       <ProjectControls
         project={p}
         onChanged={() => client.invalidateQueries({ queryKey: ["project", id] })}
       />
-      {selected.length >= 2 && (
-        <Card className="compare-panel">
-          <div className="section-title">
-            <div>
-              <p className="eyebrow">Comparison</p>
-              <h2>Two moments, one surface</h2>
-            </div>
-            <Button
-              variant="secondary"
-              disabled={selected.length !== 2}
-              onClick={() =>
-                api.compare(selected[0]!, selected[1]!).then(setCompare).catch(setError)
-              }
-            >
-              {selected.length === 2 ? "Generate diff" : "Choose two for diff"}
-            </Button>
-          </div>
-          <div className="side-by-side">
-            {selected.map((captureId) => {
-              const capture = captures.data?.find((item) => item.id === captureId);
-              return capture?.imageUrl ? (
-                <figure key={capture.id}>
-                  <img src={capture.imageUrl} alt="Selected capture" />
-                  <figcaption>{new Date(capture.capturedAt).toLocaleString()}</figcaption>
-                </figure>
-              ) : null;
-            })}
-          </div>
-          {compare && <ComparisonResult comparison={compare} />}
-        </Card>
-      )}
-      {grouped.map(({ profile, captures: history }) => (
-        <section className="history" key={profile.id}>
-          <div className="section-title">
-            <div>
-              <p className="eyebrow">{profile.browser}</p>
-              <h2>{profile.name}</h2>
-            </div>
-            <div className="export-actions">
-              <Button
-                variant="secondary"
-                onClick={() => api.createExport(id, profile.id, "gif").catch(setError)}
-              >
-                GIF ↓
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => api.createExport(id, profile.id, "webm").catch(setError)}
-              >
-                WebM ↓
-              </Button>
-            </div>
-          </div>
-          <ProfileSettings
-            projectId={id}
-            profile={profile}
-            onChanged={() => client.invalidateQueries({ queryKey: ["project", id] })}
-          />
-          {history.length ? (
-            <div className="capture-grid">
-              {history.map((capture) => (
-                <CaptureCard
-                  key={capture.id}
-                  capture={capture}
-                  selected={selected.includes(capture.id)}
-                  onSelect={() =>
-                    setSelected((current) =>
-                      current.includes(capture.id)
-                        ? current.filter((item) => item !== capture.id)
-                        : current.length >= 6
-                          ? current
-                          : [...current, capture.id],
-                    )
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <Empty title="No frames yet">
-              Run a capture to establish this profile’s first point in time.
-            </Empty>
-          )}
-        </section>
-      ))}
     </>
   );
 }
@@ -1159,12 +1340,147 @@ function ProjectControls({
       );
     }
   };
+  return (
+    <>
+      <ErrorNotice error={error} />
+      {notice && <div className="success-notice">{notice}</div>}
+      <section className="configuration-section">
+        <div className="configuration-heading">
+          <div>
+            <Eyebrow tone="muted">03</Eyebrow>
+            <h2>Schedule and retention</h2>
+          </div>
+          <p>Control when captures run and how much history remains available.</p>
+        </div>
+        <div className="control-columns single">
+          <form onSubmit={save}>
+            <h3>Capture policy</h3>
+            <Field label="Schedule preset">
+              <select
+                value={
+                  ["0 0 * * *", "0 */6 * * *", "0 9 * * 1", "custom"].includes(scheduleExpression)
+                    ? scheduleExpression
+                    : "custom"
+                }
+                onChange={(event) => {
+                  if (event.target.value !== "custom") setScheduleExpression(event.target.value);
+                }}
+              >
+                <option value="0 0 * * *">Daily at midnight</option>
+                <option value="0 */6 * * *">Every six hours</option>
+                <option value="0 9 * * 1">Weekly on Monday</option>
+                <option value="custom">Custom cron</option>
+              </select>
+            </Field>
+            <Field label="Cron expression">
+              <input
+                name="scheduleExpression"
+                value={scheduleExpression}
+                onChange={(event) => setScheduleExpression(event.target.value)}
+              />
+            </Field>
+            <Field label="Timezone">
+              <input name="scheduleTimezone" defaultValue={project.scheduleTimezone} />
+            </Field>
+            <div className="form-row">
+              <Field label="Keep days">
+                <input
+                  name="retentionDays"
+                  type="number"
+                  min="1"
+                  defaultValue={project.retentionDays ?? ""}
+                />
+              </Field>
+              <Field label="Keep count">
+                <input
+                  name="retentionCount"
+                  type="number"
+                  min="1"
+                  defaultValue={project.retentionCount ?? ""}
+                />
+              </Field>
+            </div>
+            <label className="check-line">
+              <input
+                name="scheduleEnabled"
+                type="checkbox"
+                defaultChecked={project.scheduleEnabled}
+              />
+              Enable schedule after every profile has succeeded
+            </label>
+            <label className="check-line">
+              <input name="confirmUntestedProfiles" type="checkbox" />
+              Explicitly allow scheduling untested profiles
+            </label>
+            <Button type="submit">Save policy</Button>
+          </form>
+        </div>
+      </section>
+      <section className="configuration-section">
+        <div className="configuration-heading">
+          <div>
+            <Eyebrow tone="muted">04</Eyebrow>
+            <h2>Webhooks and target credentials</h2>
+          </div>
+          <p>Send change events and authenticate captures of protected pages.</p>
+        </div>
+        <div className="control-columns">
+          <form onSubmit={addWebhook}>
+            <h3>Change webhook</h3>
+            <Field label="HTTPS endpoint">
+              <input name="url" type="url" required placeholder="https://example.com/hooks/sad" />
+            </Field>
+            <Field label="Change threshold (%)">
+              <input
+                name="threshold"
+                type="number"
+                min="0"
+                max="100"
+                step="0.001"
+                defaultValue="0"
+              />
+            </Field>
+            <Button type="submit" variant="secondary">
+              Add signed webhook
+            </Button>
+            <div className="hook-list">
+              {hooks.data?.map((hook) => (
+                <span key={hook.id}>
+                  {hook.url} · {hook.threshold}%
+                </span>
+              ))}
+            </div>
+          </form>
+          <form onSubmit={replaceCredentials}>
+            <h3>Target authentication</h3>
+            <p className="form-help">
+              Values are write-only. Saving replaces every stored header and cookie.
+            </p>
+            <Field label="Headers (JSON object)">
+              <textarea name="headers" rows={4} defaultValue="{}" spellCheck={false} />
+            </Field>
+            <Field label="Cookies (JSON array)">
+              <textarea name="cookies" rows={4} defaultValue="[]" spellCheck={false} />
+            </Field>
+            <Button type="submit" variant="secondary">
+              Replace credentials
+            </Button>
+          </form>
+        </div>
+      </section>
+    </>
+  );
+}
+
+function AddProfileForm({ projectId, onChanged }: { projectId: string; onChanged: () => void }) {
+  const [error, setError] = useState<unknown>();
+  const [notice, setNotice] = useState<string>();
   const addProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
     try {
-      await api.addProfile(project.id, {
+      await api.addProfile(projectId, {
         name: String(data.get("name")),
         browser: String(data.get("browser")) as CaptureProfileInput["browser"],
         enabled: true,
@@ -1182,6 +1498,7 @@ function ProjectControls({
         timeoutMs: 30_000,
       });
       setNotice("Profile added. Edit it below, then run a test capture.");
+      setError(undefined);
       form.reset();
       onChanged();
     } catch (caught) {
@@ -1189,142 +1506,48 @@ function ProjectControls({
     }
   };
   return (
-    <details className="control-panel">
-      <summary>
-        <span>Schedule, retention & webhooks</span>
-        <span>Open →</span>
-      </summary>
+    <form className="add-profile-form" onSubmit={addProfile}>
+      <div>
+        <h3>Add profile</h3>
+        <p>Start with a standard desktop viewport, then refine it above.</p>
+      </div>
+      <Field label="Profile name">
+        <input name="name" required placeholder="Mobile dark" />
+      </Field>
+      <Field label="Browser">
+        <select name="browser" defaultValue="chromium">
+          <option value="chromium">Chromium</option>
+          <option value="firefox">Firefox</option>
+          <option value="webkit">WebKit</option>
+        </select>
+      </Field>
+      <Button type="submit" variant="secondary">
+        Add profile
+      </Button>
       <ErrorNotice error={error} />
       {notice && <div className="success-notice">{notice}</div>}
-      <div className="control-columns">
-        <form onSubmit={save}>
-          <h3>Capture policy</h3>
-          <Field label="Schedule preset">
-            <select
-              value={
-                ["0 0 * * *", "0 */6 * * *", "0 9 * * 1", "custom"].includes(scheduleExpression)
-                  ? scheduleExpression
-                  : "custom"
-              }
-              onChange={(event) => {
-                if (event.target.value !== "custom") setScheduleExpression(event.target.value);
-              }}
-            >
-              <option value="0 0 * * *">Daily at midnight</option>
-              <option value="0 */6 * * *">Every six hours</option>
-              <option value="0 9 * * 1">Weekly on Monday</option>
-              <option value="custom">Custom cron</option>
-            </select>
-          </Field>
-          <Field label="Cron expression">
-            <input
-              name="scheduleExpression"
-              value={scheduleExpression}
-              onChange={(event) => setScheduleExpression(event.target.value)}
-            />
-          </Field>
-          <Field label="Timezone">
-            <input name="scheduleTimezone" defaultValue={project.scheduleTimezone} />
-          </Field>
-          <div className="form-row">
-            <Field label="Keep days">
-              <input
-                name="retentionDays"
-                type="number"
-                min="1"
-                defaultValue={project.retentionDays ?? ""}
-              />
-            </Field>
-            <Field label="Keep count">
-              <input
-                name="retentionCount"
-                type="number"
-                min="1"
-                defaultValue={project.retentionCount ?? ""}
-              />
-            </Field>
-          </div>
-          <label className="check-line">
-            <input
-              name="scheduleEnabled"
-              type="checkbox"
-              defaultChecked={project.scheduleEnabled}
-            />
-            Enable schedule after every profile has succeeded
-          </label>
-          <label className="check-line">
-            <input name="confirmUntestedProfiles" type="checkbox" />
-            Explicitly allow scheduling untested profiles
-          </label>
-          <Button type="submit">Save policy</Button>
-        </form>
-        <form onSubmit={addWebhook}>
-          <h3>Change webhook</h3>
-          <Field label="HTTPS endpoint">
-            <input name="url" type="url" required placeholder="https://example.com/hooks/sad" />
-          </Field>
-          <Field label="Change threshold (%)">
-            <input name="threshold" type="number" min="0" max="100" step="0.001" defaultValue="0" />
-          </Field>
-          <Button type="submit" variant="secondary">
-            Add signed webhook
-          </Button>
-          <div className="hook-list">
-            {hooks.data?.map((hook) => (
-              <span key={hook.id}>
-                {hook.url} · {hook.threshold}%
-              </span>
-            ))}
-          </div>
-        </form>
-        <form onSubmit={replaceCredentials}>
-          <h3>Target authentication</h3>
-          <p className="form-help">
-            Values are write-only. Saving replaces every stored header and cookie.
-          </p>
-          <Field label="Headers (JSON object)">
-            <textarea name="headers" rows={4} defaultValue="{}" spellCheck={false} />
-          </Field>
-          <Field label="Cookies (JSON array)">
-            <textarea name="cookies" rows={4} defaultValue="[]" spellCheck={false} />
-          </Field>
-          <Button type="submit" variant="secondary">
-            Replace credentials
-          </Button>
-        </form>
-        <form onSubmit={addProfile}>
-          <h3>Add profile</h3>
-          <Field label="Profile name">
-            <input name="name" required placeholder="Mobile dark" />
-          </Field>
-          <Field label="Browser">
-            <select name="browser" defaultValue="chromium">
-              <option value="chromium">Chromium</option>
-              <option value="firefox">Firefox</option>
-              <option value="webkit">WebKit</option>
-            </select>
-          </Field>
-          <Button type="submit" variant="secondary">
-            Add profile
-          </Button>
-        </form>
-      </div>
-    </details>
+    </form>
   );
 }
 
 function CaptureCard({
   capture,
-  selected,
+  role,
+  disabled,
   onSelect,
 }: {
   capture: CaptureRecord;
-  selected: boolean;
+  role: ComparisonSlot | null;
+  disabled?: boolean;
   onSelect: () => void;
 }) {
   return (
-    <article className={`capture-card ${selected ? "selected" : ""}`}>
-      <button onClick={onSelect} aria-pressed={selected} disabled={capture.status !== "succeeded"}>
+    <article className={`capture-card ${role ? `selected selected-${role}` : ""}`}>
+      <button
+        onClick={onSelect}
+        aria-pressed={Boolean(role)}
+        disabled={disabled || capture.status !== "succeeded"}
+      >
         {capture.thumbnailUrl ? (
           <img
             src={capture.thumbnailUrl}
@@ -1336,7 +1559,7 @@ function CaptureCard({
           </div>
         )}
         {capture.status === "succeeded" && (
-          <span className="capture-check">{selected ? "✓" : "+"}</span>
+          <span className="capture-check">{role ? role : "+"}</span>
         )}
       </button>
       <div>
@@ -1359,9 +1582,9 @@ function PublicGallery() {
   const mode = params.token ? "s" : "p";
   const value = params.token ?? params.slug ?? "";
   const [profileId, setProfileId] = useState<string>();
-  const [selected, setSelected] = useState<string[]>([]);
-  const [comparison, setComparison] = useState<Comparison>();
-  const [error, setError] = useState<unknown>();
+  const [page, setPage] = useState(0);
+  const [selection, setSelection] =
+    useState<ComparisonSelection<CaptureRecord>>(emptyComparisonSelection);
   const gallery = useQuery({
     queryKey: ["public", mode, value],
     queryFn: () => api.publicGallery(mode, value),
@@ -1373,20 +1596,21 @@ function PublicGallery() {
         <ErrorNotice error={gallery.error} />
       </div>
     );
-  const visible = profileId
-    ? gallery.data.captures.filter((capture) => capture.profileId === profileId)
-    : gallery.data.captures;
-  const choose = (capture: CaptureRecord) => {
-    setComparison(undefined);
-    setSelected((current) => {
-      if (current.includes(capture.id)) return current.filter((id) => id !== capture.id);
-      const currentProfile = gallery.data?.captures.find(
-        (item) => item.id === current[0],
-      )?.profileId;
-      return currentProfile && currentProfile !== capture.profileId
-        ? [capture.id]
-        : [...current.slice(-1), capture.id];
-    });
+  const activeProfile =
+    gallery.data.project.profiles.find((profile) => profile.id === profileId) ??
+    gallery.data.project.profiles.find((profile) => profile.settings.enabled) ??
+    gallery.data.project.profiles[0];
+  const profileCaptures = gallery.data.captures.filter(
+    (capture) => capture.profileId === activeProfile?.id,
+  );
+  const successful = successfulCaptures(profileCaptures);
+  const failedCount = profileCaptures.length - successful.length;
+  const pageCount = Math.max(1, Math.ceil(successful.length / CAPTURES_PER_PAGE));
+  const visible = paginateCaptures(successful, Math.min(page, pageCount - 1));
+  const changeProfile = (nextProfileId: string) => {
+    setProfileId(nextProfileId);
+    setPage(0);
+    setSelection(emptyComparisonSelection());
   };
   return (
     <div className="public-page">
@@ -1401,66 +1625,59 @@ function PublicGallery() {
         </p>
       </header>
       <div className="public-tools">
-        <div className="segmented">
-          <button
-            className={!profileId ? "active" : ""}
-            onClick={() => {
-              setProfileId(undefined);
-              setSelected([]);
-              setComparison(undefined);
-            }}
-          >
-            All profiles
-          </button>
+        <div className="segmented" aria-label="Capture profile">
           {gallery.data.project.profiles.map((profile) => (
             <button
               key={profile.id}
-              className={profileId === profile.id ? "active" : ""}
-              onClick={() => {
-                setProfileId(profile.id);
-                setSelected([]);
-                setComparison(undefined);
-              }}
+              className={activeProfile?.id === profile.id ? "active" : ""}
+              onClick={() => changeProfile(profile.id)}
             >
               {profile.name}
             </button>
           ))}
         </div>
         <div className="public-actions">
-          {profileId && (
+          {activeProfile && (
             <>
-              <a href={`/${mode}/${value}/${profileId}/latest.gif`}>Latest GIF</a>
-              <a href={`/${mode}/${value}/${profileId}/latest.webm`}>Latest WebM</a>
+              <a href={`/${mode}/${value}/${activeProfile.id}/latest.gif`}>Latest GIF</a>
+              <a href={`/${mode}/${value}/${activeProfile.id}/latest.webm`}>Latest WebM</a>
             </>
           )}
-          <Button
-            variant="secondary"
-            disabled={selected.length !== 2}
-            onClick={() =>
-              api
-                .publicCompare(mode, value, selected[0]!, selected[1]!)
-                .then(setComparison)
-                .catch(setError)
-            }
-          >
-            Compare selected
-          </Button>
         </div>
       </div>
-      <ErrorNotice error={error} />
-      {comparison && (
-        <Card className="compare-panel public-comparison">
-          <ComparisonResult comparison={comparison} />
-        </Card>
-      )}
-      <div className="public-grid">
+      <section className="public-comparison-workspace">
+        <div className="capture-browser-heading">
+          <div>
+            <Eyebrow>Pixel comparison</Eyebrow>
+            <h2>{activeProfile?.name ?? "Capture history"}</h2>
+          </div>
+          <div className="capture-browser-meta">
+            <span>{successful.length} comparable captures</span>
+            {failedCount > 0 && <span>{failedCount} failed unavailable</span>}
+          </div>
+        </div>
+        <ComparisonTray
+          selection={selection}
+          onChange={(slot) => setSelection((current) => changeComparisonSlot(current, slot))}
+          onRemove={(slot) => setSelection((current) => removeComparisonSlot(current, slot))}
+        />
+        <AutomaticComparison
+          selection={selection}
+          compare={(first, second) => api.publicCompare(mode, value, first, second)}
+          scope={`public:${mode}:${value}`}
+        />
+      </section>
+      <div className="public-grid capture-grid">
         {visible.map((capture) => (
           <article
             key={capture.id}
-            className={`public-frame ${selected.includes(capture.id) ? "selected" : ""}`}
+            className={`public-frame ${selectionRole(selection, capture.id) ? `selected selected-${selectionRole(selection, capture.id)}` : ""}`}
           >
             <a href={capture.imageUrl ?? "#"}>
-              <img src={capture.thumbnailUrl ?? ""} alt="" />
+              <img
+                src={capture.thumbnailUrl ?? ""}
+                alt={`Capture from ${new Date(capture.capturedAt).toLocaleString()}`}
+              />
             </a>
             <time>{new Date(capture.capturedAt).toLocaleString()}</time>
             <span>
@@ -1468,12 +1685,41 @@ function PublicGallery() {
                 ? "Opening frame"
                 : `${capture.changePercent.toFixed(3)}% changed`}
             </span>
-            <button onClick={() => choose(capture)}>
-              {selected.includes(capture.id) ? "Selected" : "Select to compare"}
+            <button
+              disabled={!selectionRole(selection, capture.id) && !selection.active}
+              onClick={() => {
+                const role = selectionRole(selection, capture.id);
+                setSelection((current) =>
+                  role ? removeComparisonSlot(current, role) : selectCapture(current, capture),
+                );
+              }}
+            >
+              {selectionRole(selection, capture.id) ?? "Select to compare"}
             </button>
           </article>
         ))}
       </div>
+      {successful.length > CAPTURES_PER_PAGE && (
+        <nav className="capture-pagination" aria-label="Capture history pages">
+          <Button
+            variant="secondary"
+            disabled={page === 0}
+            onClick={() => setPage((current) => Math.max(0, current - 1))}
+          >
+            ← Newer
+          </Button>
+          <span>
+            Page {Math.min(page, pageCount - 1) + 1} of {pageCount}
+          </span>
+          <Button
+            variant="secondary"
+            disabled={page >= pageCount - 1}
+            onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+          >
+            Older →
+          </Button>
+        </nav>
+      )}
       <footer>
         <span>Recorded with Screenshot-a-Day · v0.1.0</span>
         <span aria-hidden="true"> · </span>
@@ -1612,7 +1858,9 @@ export default function App() {
         <Route path="/s/:token" element={<PublicGallery />} />
         <Route element={<RequireAuth />}>
           <Route index element={<Dashboard />} />
-          <Route path="projects/:id" element={<ProjectPage />} />
+          <Route path="projects/:id" element={<Navigate to="compare" replace />} />
+          <Route path="projects/:id/compare" element={<ProjectComparePage />} />
+          <Route path="projects/:id/configuration" element={<ProjectConfigurationPage />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" />} />
