@@ -1,10 +1,18 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
-import { Globe2, LoaderCircle, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, type PublicationTarget } from "./api";
-import { Button, Empty, ErrorNotice, Field, Status } from "./components";
+import {
+  AccentRule,
+  Button,
+  Empty,
+  ErrorNotice,
+  Eyebrow,
+  Field,
+  Spinner,
+  Status,
+} from "./components";
 import { publicationJobInFlight } from "./publication-status";
 
 function TargetCard({
@@ -37,29 +45,29 @@ function TargetCard({
       <div className="target-card-identity">
         <strong>{target.name}</strong>
         <span>
-          {target.adapter} · {target.projectCount} project{target.projectCount === 1 ? "" : "s"}
+          {target.adapter} · {target.projectCount} project{target.projectCount === 1 ? "" : "s"} ·{" "}
+          {target.dirtyRevision > target.publishedRevision ? "dirty" : target.state}
         </span>
       </div>
-      <div className="target-card-status">
-        <Status value={target.state} />
+      <div className="target-card-destination">
+        <a className="target-card-url" href={target.baseUrl} target="_blank" rel="noreferrer">
+          {target.baseUrl} ↗
+        </a>
+        <span className="target-card-schedule">
+          {target.scheduleMode}
+          {target.nextRunAt ? ` · next ${new Date(target.nextRunAt).toLocaleString()}` : ""}
+        </span>
         {target.lastVerificationError && (
           <span className="warning-copy">Connection needs attention</span>
         )}
       </div>
-      <a className="target-card-url" href={target.baseUrl} target="_blank" rel="noreferrer">
-        {target.baseUrl}
-      </a>
-      <span className="target-card-schedule">
-        {target.scheduleMode}
-        {target.nextRunAt ? ` · ${new Date(target.nextRunAt).toLocaleString()}` : ""}
-      </span>
       <div className="target-card-actions">
         <Button
           variant="secondary"
           disabled={busy}
           onClick={() => void run("verify", () => api.verifyPublicationTarget(target.id))}
         >
-          {action === "verify" && <LoaderCircle className="spin" size={15} />}
+          {action === "verify" && <Spinner />}
           Verify
         </Button>
         <Button
@@ -67,11 +75,10 @@ function TargetCard({
           disabled={busy}
           onClick={() => void run("publish", () => api.publishTarget(target.id))}
         >
-          {action === "publish" && <LoaderCircle className="spin" size={15} />}
-          Publish now
+          {action === "publish" && <Spinner />}
+          Publish now →
         </Button>
         <Button variant="secondary" disabled={Boolean(action)} onClick={onEdit}>
-          <Pencil size={15} />
           Edit
         </Button>
       </div>
@@ -220,7 +227,7 @@ function TargetPanel({
         <Dialog.Content className="target-panel">
           <header className="target-panel-head">
             <div>
-              <p className="eyebrow">Static publishing</p>
+              <Eyebrow tone="muted">Static publishing</Eyebrow>
               <Dialog.Title>
                 {creating ? "Add a target" : `Edit ${target?.name ?? "target"}`}
               </Dialog.Title>
@@ -232,7 +239,7 @@ function TargetPanel({
             </div>
             <Dialog.Close asChild>
               <button className="icon-button" aria-label="Close target editor">
-                <X />
+                ×
               </button>
             </Dialog.Close>
           </header>
@@ -513,7 +520,6 @@ function TargetPanel({
                       .finally(() => setBusy(false));
                   }}
                 >
-                  <Trash2 size={15} />
                   Delete target
                 </Button>
               </div>
@@ -525,7 +531,7 @@ function TargetPanel({
                 </Button>
               </Dialog.Close>
               <Button type="submit" disabled={busy}>
-                {busy && <LoaderCircle className="spin" size={16} />}
+                {busy && <Spinner />}
                 {busy
                   ? creating
                     ? "Saving and verifying…"
@@ -573,17 +579,14 @@ export function PublicationSettings() {
     <section className="card publication-settings-card">
       <div className="publication-settings-head">
         <div>
-          <Globe2 />
-          <h2>Static publication targets</h2>
+          <AccentRule />
+          <h2>Publication targets</h2>
           <p>
             Manage destinations for portable static galleries. The home server only makes outbound
             connections.
           </p>
         </div>
-        <Button onClick={() => setEditor("new")}>
-          <Plus size={17} />
-          Add target
-        </Button>
+        <Button onClick={() => setEditor("new")}>Add target →</Button>
       </div>
       <ErrorNotice error={error ?? publicationTargets.error} />
       {publicationStatus.data && !publicationStatus.data.available && (
