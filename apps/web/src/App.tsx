@@ -1,26 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
-import {
-  Activity,
-  Aperture,
-  ArrowRight,
-  Clock3,
-  Code2,
-  Database,
-  Film,
-  Globe2,
-  KeyRound,
-  LoaderCircle,
-  LogOut,
-  Plus,
-  ScanEye,
-  Settings2,
-  ShieldCheck,
-} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   Link,
   Navigate,
+  NavLink,
   Outlet,
   Route,
   Routes,
@@ -31,7 +15,19 @@ import {
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
 import { api, type Comparison } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
-import { Button, Card, Empty, ErrorNotice, Field, Status } from "./components";
+import {
+  AccentRule,
+  Badge,
+  Button,
+  Card,
+  Empty,
+  ErrorNotice,
+  Eyebrow,
+  Field,
+  Grain,
+  Spinner,
+  Status,
+} from "./components";
 import { publicationInFlight, publicationStatus } from "./publication-status";
 import { PublicationSettings } from "./publication-settings";
 
@@ -44,9 +40,9 @@ function ArtsLinkCredit() {
       href={ARTS_LINK_URL}
       target="_blank"
       rel="noreferrer"
-      aria-label="An Arts Link project (opens in a new tab)"
+      aria-label="arts-link (opens in a new tab)"
     >
-      <span>an</span> <strong>arts-link</strong> <span>project ↗</span>
+      arts-link
     </a>
   );
 }
@@ -57,40 +53,29 @@ function Shell() {
   const version = useQuery({ queryKey: ["version"], queryFn: api.version });
   return (
     <div className="shell">
-      <aside className="sidebar">
+      <header className="app-header">
         <div className="brand-lockup">
           <Link to="/" className="brand">
-            <span className="brand-mark">
-              <Aperture />
-            </span>
-            <span>
-              Screenshot<span>-a-Day</span>
-            </span>
+            Screenshot-a-Day
           </Link>
+          <span className="header-divider" aria-hidden="true" />
           <ArtsLinkCredit />
         </div>
-        <nav>
-          <Link to="/">
-            <Activity />
+        <nav aria-label="Primary navigation">
+          <NavLink to="/" end>
             Projects
-          </Link>
+          </NavLink>
           <a href="/docs/api" target="_blank">
-            <Code2 />
             API
           </a>
-          <Link to="/settings">
-            <Settings2 />
-            Settings
-          </Link>
+          <NavLink to="/settings">Settings</NavLink>
           <a href="https://github.com/arts-link/screenshot-a-day" target="_blank" rel="noreferrer">
-            <Globe2 />
-            Source
+            Source ↗
           </a>
-        </nav>
-        <div className="sidebar-foot">
+          <span className="header-divider" aria-hidden="true" />
           <span>v{version.data?.version ?? "0.1.0"}</span>
           <button
-            aria-label="Log out"
+            className="sign-out"
             onClick={() =>
               api.logout().then(() => {
                 queryClient.clear();
@@ -98,10 +83,10 @@ function Shell() {
               })
             }
           >
-            <LogOut size={17} />
+            Sign out
           </button>
-        </div>
-      </aside>
+        </nav>
+      </header>
       <main className="workspace">
         <Outlet />
       </main>
@@ -119,9 +104,7 @@ function RequireAuth() {
 function Splash() {
   return (
     <div className="splash">
-      <div className="pulse-logo">
-        <Aperture />
-      </div>
+      <AccentRule />
       <p>Bringing the past into focus…</p>
     </div>
   );
@@ -155,13 +138,9 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
   };
   return (
     <div className="auth-page">
-      <div className="auth-glow" />
       <Card className="auth-card">
-        <div className="auth-brand">
-          <Aperture />
-          <span>S.A.D.</span>
-        </div>
-        <p className="eyebrow">Screenshot-a-Day</p>
+        <AccentRule />
+        <Eyebrow tone="muted">Screenshot-a-Day</Eyebrow>
         <h1>{setup ? "Set the first frame" : "Welcome back"}</h1>
         <p>
           {setup
@@ -187,16 +166,12 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
               autoComplete={setup ? "new-password" : "current-password"}
             />
           </Field>
-          <Button type="submit">
-            {setup ? "Create administrator" : "Sign in"}
-            <ArrowRight size={17} />
-          </Button>
+          <Button type="submit">{setup ? "Create administrator →" : "Sign in →"}</Button>
         </form>
         <div className="source-note">
-          <ArtsLinkCredit />
-          <span aria-hidden="true"> · </span>
+          Open source under AGPL-3.0 ·
           <a href="https://github.com/arts-link/screenshot-a-day" target="_blank" rel="noreferrer">
-            AGPL-3.0 source
+            view source ↗
           </a>
         </div>
       </Card>
@@ -211,14 +186,14 @@ function Dashboard() {
     <>
       <header className="page-head">
         <div>
-          <p className="eyebrow">Visual history</p>
+          <Eyebrow>Visual history</Eyebrow>
           <h1>Your projects</h1>
-          <p>Monitor the details that deployments and memory tend to blur.</p>
+          <p>
+            {projects.data?.length ? `${projects.data.length} sites` : "Sites"} under watch. Monitor
+            the details that deployments and memory tend to blur.
+          </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus size={18} />
-          New project
-        </Button>
+        <Button onClick={() => setCreating(true)}>New project →</Button>
       </header>
       <ErrorNotice error={projects.error} />
       {creating && <CreateProject onClose={() => setCreating(false)} />}
@@ -227,26 +202,19 @@ function Dashboard() {
           {projects.data.map((project) => (
             <Link className="project-card" to={`/projects/${project.id}`} key={project.id}>
               <div className="project-top">
-                <span className="project-icon">
-                  <Globe2 />
-                </span>
-                <span className={`publish-dot publish-${project.publishMode}`}>
+                <AccentRule />
+                <Badge tone={project.publishMode === "indexable" ? "accent" : "neutral"}>
                   {project.publishMode}
-                </span>
+                </Badge>
               </div>
               <h2>{project.name}</h2>
               <p>{project.url}</p>
               <div className="project-meta">
-                <span>
-                  <ScanEye size={15} />
-                  {project.profileCount} profile{project.profileCount === 1 ? "" : "s"}
-                </span>
-                <span>
-                  <Clock3 size={15} />
-                  {project.latestCaptureAt
-                    ? new Date(project.latestCaptureAt).toLocaleDateString()
-                    : "No captures"}
-                </span>
+                {project.profileCount} profile{project.profileCount === 1 ? "" : "s"}
+                <span aria-hidden="true">·</span>
+                {project.latestCaptureAt
+                  ? new Date(project.latestCaptureAt).toLocaleDateString()
+                  : "No captures"}
               </div>
             </Link>
           ))}
@@ -317,7 +285,7 @@ function CreateProject({ onClose }: { onClose: () => void }) {
       <Card className="modal">
         <div className="modal-title">
           <div>
-            <p className="eyebrow">New timeline</p>
+            <Eyebrow tone="muted">New timeline</Eyebrow>
             <h2>Watch a website</h2>
           </div>
           <button className="icon-button" onClick={onClose} aria-label="Close">
@@ -389,7 +357,7 @@ function CreateProject({ onClose }: { onClose: () => void }) {
               Cancel
             </Button>
             <Button type="submit" disabled={!browsers.length}>
-              Create project
+              Create project →
             </Button>
           </div>
         </form>
@@ -454,7 +422,7 @@ function ConfirmationDialog({
               disabled={busy || Boolean(phrase && confirmation !== phrase)}
               onClick={onConfirm}
             >
-              {busy && <LoaderCircle className="spin" size={16} />}
+              {busy && <Spinner />}
               {confirmLabel}
             </Button>
           </div>
@@ -586,10 +554,10 @@ function ProjectPage() {
           <Link to="/" className="back-link">
             ← All projects
           </Link>
-          <p className="eyebrow">{p.publishMode} timeline</p>
+          <Eyebrow>{p.publishMode} timeline</Eyebrow>
           <h1>{p.name}</h1>
           <a href={p.url} target="_blank" rel="noreferrer">
-            {p.url}
+            {p.url} ↗
           </a>
         </div>
         <div className="capture-action">
@@ -598,8 +566,8 @@ function ProjectPage() {
             disabled={captureBusy || captureAcknowledging || runs.isLoading}
             aria-busy={captureBusy}
           >
-            {captureBusy ? <LoaderCircle className="spin" size={18} /> : <Aperture size={18} />}
-            {runs.isLoading ? "Checking queue…" : captureLabel}
+            {captureBusy && <Spinner />}
+            {runs.isLoading ? "Checking queue…" : `${captureLabel} →`}
           </Button>
           <span className="capture-action-status" role="status" aria-live="polite">
             {captureDetail ?? "Queues one batch across every enabled profile."}
@@ -608,19 +576,19 @@ function ProjectPage() {
       </header>
       <ErrorNotice error={error ?? captures.error ?? runs.error} />
       <div className="metric-row">
-        <Card>
+        <div className="metric">
           <span>Profiles</span>
           <strong>{p.profiles.length}</strong>
-        </Card>
-        <Card>
+        </div>
+        <div className="metric">
           <span>Captures</span>
           <strong>{captures.data?.length ?? 0}</strong>
-        </Card>
-        <Card>
+        </div>
+        <div className="metric">
           <span>Schedule</span>
           <strong>{p.scheduleEnabled ? "Active" : "Paused"}</strong>
-        </Card>
-        <Card>
+        </div>
+        <div className="metric">
           <span>Last change</span>
           <strong>
             {captures.data
@@ -628,14 +596,14 @@ function ProjectPage() {
               ?.changePercent?.toFixed(2) ?? "—"}
             {captures.data?.some((capture) => capture.changePercent != null) ? "%" : ""}
           </strong>
-        </Card>
+        </div>
       </div>
       <Card className="publishing-card">
         <div className="publishing-card-head">
           <div className="publishing-title">
-            <ShieldCheck />
+            <AccentRule />
             <div>
-              <p className="eyebrow">Visibility and delivery</p>
+              <Eyebrow tone="muted">Visibility and delivery</Eyebrow>
               <h2>Publishing</h2>
             </div>
           </div>
@@ -649,9 +617,7 @@ function ProjectPage() {
                   void runPublicationAction(`mode-${mode}`, () => api.publication(id, mode))
                 }
               >
-                {publicationAction === `mode-${mode}` && (
-                  <LoaderCircle className="spin" size={12} />
-                )}
+                {publicationAction === `mode-${mode}` && <Spinner />}
                 {mode}
               </button>
             ))}
@@ -661,7 +627,7 @@ function ProjectPage() {
           <span>Public access</span>
           {shareUrl ? (
             <a href={shareUrl} target="_blank" rel="noreferrer">
-              {shareUrl}
+              {shareUrl} ↗
             </a>
           ) : (
             <strong>Administrator only</strong>
@@ -674,25 +640,30 @@ function ProjectPage() {
           <div className="destination-head">
             <div>
               <span className="destination-label">Static destination</span>
-              <h3>
-                {p.staticPublication
-                  ? `${p.staticPublication.targetName} · ${p.staticPublication.targetAdapter}`
-                  : "No target attached"}
-              </h3>
+              <h3>{p.staticPublication ? p.staticPublication.targetName : "No target attached"}</h3>
+              {p.staticPublication && (
+                <p>
+                  {p.staticPublication.targetAdapter}
+                  {p.staticPublication.lastPublishedAt
+                    ? ` · deployed ${new Date(p.staticPublication.lastPublishedAt).toLocaleString()}`
+                    : ""}
+                </p>
+              )}
             </div>
-            {staticStatus && <Status value={staticStatus.value} />}
+            {staticStatus && (
+              <Badge tone={staticStatus.value === "active" ? "accent" : "neutral"}>
+                {staticStatus.value === "active"
+                  ? `Live on ${p.staticPublication?.targetName}`
+                  : staticStatus.value.replaceAll("_", " ")}
+              </Badge>
+            )}
           </div>
           {p.staticPublication ? (
             <>
               <div className="publication-live-status" role="status" aria-live="polite">
-                {staticStatus?.busy && <LoaderCircle className="spin" size={16} />}
+                {staticStatus?.busy && <Spinner />}
                 <span>
                   <strong>{staticStatus?.message}</strong>
-                  {p.staticPublication.lastPublishedAt && !staticStatus?.busy && (
-                    <small>
-                      Last deployed {new Date(p.staticPublication.lastPublishedAt).toLocaleString()}
-                    </small>
-                  )}
                 </span>
               </div>
               <a
@@ -701,7 +672,7 @@ function ProjectPage() {
                 target="_blank"
                 rel="noreferrer"
               >
-                {p.staticPublication.url}
+                {p.staticPublication.url} ↗
               </a>
               {p.staticPublication.lastError && (
                 <ErrorNotice error={new Error(p.staticPublication.lastError)} />
@@ -716,8 +687,8 @@ function ProjectPage() {
                     )
                   }
                 >
-                  {publicationAction === "publish" && <LoaderCircle className="spin" size={16} />}
-                  Publish now
+                  {publicationAction === "publish" && <Spinner />}
+                  Publish now →
                 </Button>
                 <Link
                   className="button button-secondary"
@@ -774,8 +745,8 @@ function ProjectPage() {
                 </select>
               </Field>
               <Button type="submit" disabled={publicationBusy}>
-                {publicationAction === "attach" && <LoaderCircle className="spin" size={16} />}
-                Attach and publish
+                {publicationAction === "attach" && <Spinner />}
+                Attach and publish →
               </Button>
             </form>
           ) : (
@@ -875,14 +846,13 @@ function ProjectPage() {
                 variant="secondary"
                 onClick={() => api.createExport(id, profile.id, "gif").catch(setError)}
               >
-                <Film size={16} />
-                GIF
+                GIF ↓
               </Button>
               <Button
                 variant="secondary"
                 onClick={() => api.createExport(id, profile.id, "webm").catch(setError)}
               >
-                WebM
+                WebM ↓
               </Button>
             </div>
           </div>
@@ -1221,8 +1191,8 @@ function ProjectControls({
   return (
     <details className="control-panel">
       <summary>
-        <Settings2 size={17} />
-        Schedule, retention & webhooks
+        <span>Schedule, retention & webhooks</span>
+        <span>Open →</span>
       </summary>
       <ErrorNotice error={error} />
       {notice && <div className="success-notice">{notice}</div>}
@@ -1362,7 +1332,6 @@ function CaptureCard({
           />
         ) : (
           <div className="capture-failed">
-            <ScanEye />
             <span>No image</span>
           </div>
         )}
@@ -1422,11 +1391,8 @@ function PublicGallery() {
   return (
     <div className="public-page">
       <header>
-        <div className="auth-brand">
-          <Aperture />
-          <span>S.A.D.</span>
-        </div>
-        <p className="eyebrow">Visual record</p>
+        <AccentRule />
+        <Eyebrow>Visual record</Eyebrow>
         <h1>{gallery.data.project.name}</h1>
         <p>
           {gallery.data.captures.length} retained moments across{" "}
@@ -1552,7 +1518,7 @@ function Settings() {
     <>
       <header className="page-head">
         <div>
-          <p className="eyebrow">Installation</p>
+          <Eyebrow>Installation</Eyebrow>
           <h1>Settings</h1>
           <p>Security-sensitive values stay in environment configuration.</p>
         </div>
@@ -1568,14 +1534,14 @@ function Settings() {
       <div className="settings-grid">
         <PublicationSettings />
         <Card>
-          <KeyRound />
+          <AccentRule />
           <h2>API access</h2>
           <p>Tokens are hashed at rest. This quick form creates read and capture-trigger access.</p>
           <form onSubmit={create}>
             <Field label="Token name">
               <input name="name" required placeholder="Deployment workflow" />
             </Field>
-            <Button type="submit">Create token</Button>
+            <Button type="submit">Create token →</Button>
           </form>
           <div className="token-list">
             {tokens.data?.map((token) => (
@@ -1599,7 +1565,7 @@ function Settings() {
           </div>
         </Card>
         <Card>
-          <Database />
+          <AccentRule />
           <h2>Storage</h2>
           <p>
             {format(storage.data?.bytes)} across {storage.data?.files ?? 0} artifacts, plus{" "}
@@ -1615,7 +1581,7 @@ function Settings() {
           </a>
         </Card>
         <Card>
-          <ShieldCheck />
+          <AccentRule />
           <h2>Secrets</h2>
           <p>
             Target headers and cookies are encrypted with the installation key and redacted from
@@ -1631,23 +1597,26 @@ export default function App() {
   const setup = useQuery({ queryKey: ["setup-status"], queryFn: api.setupStatus });
   if (setup.isLoading) return <Splash />;
   return (
-    <Routes>
-      <Route
-        path="/setup"
-        element={setup.data?.configured ? <Navigate to="/login" /> : <AuthPage setup />}
-      />
-      <Route
-        path="/login"
-        element={!setup.data?.configured ? <Navigate to="/setup" /> : <AuthPage />}
-      />
-      <Route path="/p/:slug" element={<PublicGallery />} />
-      <Route path="/s/:token" element={<PublicGallery />} />
-      <Route element={<RequireAuth />}>
-        <Route index element={<Dashboard />} />
-        <Route path="projects/:id" element={<ProjectPage />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
+    <>
+      <Grain />
+      <Routes>
+        <Route
+          path="/setup"
+          element={setup.data?.configured ? <Navigate to="/login" /> : <AuthPage setup />}
+        />
+        <Route
+          path="/login"
+          element={!setup.data?.configured ? <Navigate to="/setup" /> : <AuthPage />}
+        />
+        <Route path="/p/:slug" element={<PublicGallery />} />
+        <Route path="/s/:token" element={<PublicGallery />} />
+        <Route element={<RequireAuth />}>
+          <Route index element={<Dashboard />} />
+          <Route path="projects/:id" element={<ProjectPage />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" />} />
+      </Routes>
+    </>
   );
 }

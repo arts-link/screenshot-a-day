@@ -209,13 +209,11 @@ export function layout({ site, title, description, noindex, main }: PageOptions)
     <a class="skip-link" href="#main">Skip to content</a>
     <header class="site-header">
       <a class="product-mark" href="/" aria-label="Screenshot-a-Day gallery home">
-        <span class="aperture" aria-hidden="true"><span></span></span>
-        <span class="product-name">Screenshot<span>-a-Day</span></span>
+        Screenshot-a-Day
       </a>
+      <span class="header-divider" aria-hidden="true"></span>
       <div class="maker-lockup">
-        <span>an</span>
         <a href="https://www.arts-link.com/">arts-link</a>
-        <span>project</span>
       </div>
       <nav aria-label="Primary navigation">
         <a href="/">Galleries</a>
@@ -229,16 +227,17 @@ export function layout({ site, title, description, noindex, main }: PageOptions)
     <footer class="site-footer">
       <div>
         <a class="footer-maker" href="https://www.arts-link.com/">arts-link</a>
-        ${branding.supplementalFooter ? `<p>${h(branding.supplementalFooter)}</p>` : ""}
+        <p>${branding.supplementalFooter ? h(branding.supplementalFooter) : "Published from a home server. Static files only."}</p>
       </div>
       <div class="footer-meta">
-        <p><a href="https://github.com/arts-link/screenshot-a-day">Screenshot-a-Day source</a></p>
+        <p><a href="https://github.com/arts-link/screenshot-a-day">Screenshot-a-Day source ↗</a></p>
       </div>
     </footer>
     <dialog id="lightbox">
       <button data-close aria-label="Close">×</button><img alt="Full screenshot" />
       <p></p>
     </dialog>
+    <div class="grain" aria-hidden="true"></div>
   </body>
 </html>
 `;
@@ -256,7 +255,7 @@ export function homePage(site: SiteContext, galleries: Gallery[]): string {
             : ""
         }
         <div class="card-body">
-          <div class="card-meta"><span>${ordinal(index)} / Gallery</span><time>${h(formatShortDate(gallery.updatedAt))}</time></div>
+          <div class="card-meta"><span>${ordinal(index)} · Gallery</span><time>${h(formatShortDate(gallery.updatedAt))}</time></div>
           <h2><a href="${h(gallery.path)}">${h(gallery.name)}</a></h2>
           <p>${gallery.captureCount} retained captures · ${gallery.profileCount} profiles</p>
           <a class="card-link" href="${h(gallery.path)}">Open visual history <span aria-hidden="true">→</span></a>
@@ -280,8 +279,8 @@ export function homePage(site: SiteContext, galleries: Gallery[]): string {
       ${site.branding.description ? `<p class="hero-intro">${h(site.branding.description)}</p>` : ""}
     </div>
     <div class="archive-mark" aria-hidden="true">
-      <span></span><span></span><span></span>
-      <strong>Then<br />→ Now</strong>
+      <span class="accent-rule"></span>
+      <strong>Then → Now</strong>
     </div>
   </section>
   <section class="gallery-section" aria-labelledby="gallery-heading">
@@ -307,7 +306,7 @@ export function galleryPage(site: SiteContext, gallery: Gallery): string {
         : ""
     }
     <div class="card-body">
-      <div class="card-meta"><span>${ordinal(index)} / Profile</span><span>${h(profile.browser)}</span></div>
+      <div class="card-meta"><span>${ordinal(index)} · Profile</span><span>${h(profile.browser)}</span></div>
       <h2><a href="${h(profile.path ?? gallery.path)}">${h(profile.name)}</a></h2>
       <p>${profile.captureCount} retained frames</p>
       <div class="card-actions">
@@ -352,10 +351,10 @@ export function profilePage(site: SiteContext, gallery: Gallery, profile: Profil
       <img loading="lazy" src="/${h(capture.thumbnail)}" alt="Capture from ${h(capture.capturedAt)}" />
     </button>
     <div class="capture-body">
-      <div class="card-meta"><span>${ordinal(index)} / Frame</span><time datetime="${h(capture.capturedAt)}">${h(formatShortDateTime(capture.capturedAt))}</time></div>
+      <div class="card-meta"><span>${ordinal(index)} · ${h(formatShortDateTime(capture.capturedAt))}</span></div>
       <strong>${capture.changePercent === null ? "Opening frame" : `${h(capture.changePercent.toFixed(3))}% changed`}</strong>
       <div class="capture-actions">
-        ${capture.diff ? `<a href="/${h(capture.diff)}">View diff</a>` : ""}
+        ${capture.diff ? `<a href="/${h(capture.diff)}">Diff →</a>` : ""}
         <label class="compare"><input type="checkbox" data-compare="/${h(capture.image)}" /> Compare</label>
       </div>
     </div>

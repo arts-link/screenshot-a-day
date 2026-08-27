@@ -21,6 +21,14 @@ import {
 } from "./publication-templates.js";
 
 const PAGE_SIZE = 24;
+const FONT_FILES = [
+  "dm-sans-latin-ext.woff2",
+  "dm-sans-latin.woff2",
+  "fraunces-italic-latin-ext.woff2",
+  "fraunces-italic-latin.woff2",
+  "fraunces-normal-latin-ext.woff2",
+  "fraunces-normal-latin.woff2",
+] as const;
 
 export async function cleanupStalePublicationDirectories(
   olderThanMs = 60 * 60_000,
@@ -120,6 +128,7 @@ export class StaticGalleryRenderer implements PublicationRenderer {
         readFile(this.asset("assets", "gallery.css")),
         readFile(this.asset("assets", "gallery.js")),
         readFile(this.asset("static", "_headers")),
+        ...FONT_FILES.map((file) => readFile(this.asset("assets", "fonts", file))),
       ]);
       return { available: true, error: null };
     } catch (error) {
@@ -143,6 +152,12 @@ export class StaticGalleryRenderer implements PublicationRenderer {
       const jsPath = `assets/gallery.${sha256(jsSource).slice(0, 16)}.js`;
       await writeOutput(output, cssPath, brandedCss);
       await writeOutput(output, jsPath, jsSource);
+      await mkdir(join(output, "assets", "fonts"), { recursive: true });
+      await Promise.all(
+        FONT_FILES.map((file) =>
+          copyFile(this.asset("assets", "fonts", file), join(output, "assets", "fonts", file)),
+        ),
+      );
       await copyFile(this.asset("static", "_headers"), join(output, "_headers"));
 
       const site: SiteContext = { baseUrl: target.base_url, branding, cssPath, jsPath };
