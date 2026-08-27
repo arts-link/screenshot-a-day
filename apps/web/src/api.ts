@@ -119,7 +119,11 @@ export const api = {
   project: (id: string) => request<ProjectDetail>(`/api/v1/projects/${id}`),
   createProject: (input: unknown) =>
     request<ProjectDetail>("/api/v1/projects", { method: "POST", body: JSON.stringify(input) }),
-  captures: (id: string) => request<CaptureRecord[]>(`/api/v1/projects/${id}/captures?limit=200`),
+  captures: (id: string, profileId?: string, limit = 200) => {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (profileId) query.set("profileId", profileId);
+    return request<CaptureRecord[]>(`/api/v1/projects/${id}/captures?${query}`);
+  },
   runs: (id: string) => request<CaptureRun[]>(`/api/v1/projects/${id}/runs`),
   trigger: (id: string, idempotencyKey: string) =>
     request<{ runId: string }>(`/api/v1/projects/${id}/runs`, {
