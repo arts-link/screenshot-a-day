@@ -1147,6 +1147,60 @@ legend {
   margin-bottom: 24px;
 }
 
+.profile-form-actions,
+.webhook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.project-danger-zone {
+  border-bottom: 0;
+}
+
+.webhook-card {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.webhook-card form {
+  display: grid;
+  gap: 16px;
+}
+
+.webhook-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.webhook-card-heading h4 {
+  margin: 0;
+}
+
+.webhook-events {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.webhook-deliveries {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-hairline);
+  display: grid;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.webhook-deliveries > span {
+  overflow-wrap: anywhere;
+}
+
 .profile-basics {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -1521,15 +1575,47 @@ input[type="range"] {
 }
 
 .token-reveal {
+  margin: 28px 0;
+  padding: 18px;
   display: grid;
-  gap: 8px;
+  gap: 16px;
+  border-color: rgb(var(--color-lime) / 55%);
+  background: rgb(var(--color-lime) / 4%);
+}
+
+.token-reveal-head,
+.token-reveal-value {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.token-reveal-head > div {
+  display: grid;
+  gap: 4px;
+}
+
+.token-reveal-head strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.token-reveal-head span {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .token-reveal code {
-  padding: 4px 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  flex: 1;
   overflow-wrap: anywhere;
   color: var(--text-accent);
   background: var(--border-hairline);
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: all;
 }
 
 .publication-settings-head {
@@ -1997,6 +2083,16 @@ input[type="range"] {
   .public-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .token-reveal-head,
+  .token-reveal-value {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .token-reveal-head .button {
+    align-self: flex-start;
   }
 }
 

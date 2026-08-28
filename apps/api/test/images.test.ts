@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { compareImages, thumbnail } from "../src/images.js";
+import {
+  ComparisonTooLargeError,
+  MAX_COMPARISON_PIXELS,
+  compareImages,
+  thumbnail,
+} from "../src/images.js";
 
 describe("derived image artifacts", () => {
   it("generates bounded thumbnails and deterministic visual differences", async () => {
@@ -19,5 +24,19 @@ describe("derived image artifacts", () => {
     expect(same.changePercent).toBe(0);
     expect(changed.changePercent).toBe(100);
     expect((await sharp(await thumbnail(black)).metadata()).format).toBe("webp");
+  });
+
+  it("rejects comparisons above the decoded pixel budget", async () => {
+    const width = 4001;
+    const height = 4000;
+    expect(width * height).toBeGreaterThan(MAX_COMPARISON_PIXELS);
+    const oversized = await sharp({
+      create: { width, height, channels: 3, background: "#000000" },
+    })
+      .png()
+      .toBuffer();
+    await expect(compareImages(oversized, oversized)).rejects.toBeInstanceOf(
+      ComparisonTooLargeError,
+    );
   });
 });

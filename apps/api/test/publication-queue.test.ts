@@ -50,7 +50,7 @@ describe("publication queue", () => {
     return { db, target };
   }
 
-  it("forwards an existing migration-1 database to migration 2", async () => {
+  it("forwards an existing migration-1 database through migration 3", async () => {
     const directory = await mkdtemp(join(tmpdir(), "sad-publication-migration-"));
     const path = join(directory, "sad.sqlite");
     const legacy = new DatabaseConstructor(path);
@@ -63,12 +63,20 @@ describe("publication queue", () => {
     expect(db.raw.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
       { version: 1 },
       { version: 2 },
+      { version: 3 },
     ]);
     expect(
       db.raw
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='publication_targets'")
         .get(),
     ).toEqual({ name: "publication_targets" });
+    expect(
+      db.raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name='captures_profile_status_history_idx'",
+        )
+        .get(),
+    ).toEqual({ name: "captures_profile_status_history_idx" });
   });
 
   it("uses a sliding debounce and coalesces bursts into one desired revision", async () => {

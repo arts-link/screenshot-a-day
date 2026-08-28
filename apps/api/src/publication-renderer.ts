@@ -6,6 +6,7 @@ import type { PublicationBranding } from "@sad/contracts";
 import type { AppDatabase, PublicationTargetRow } from "./database.js";
 import type { BlobStore } from "./storage.js";
 import {
+  contentSecurityPolicy,
   galleryPage,
   homePage,
   notFoundPage,
@@ -147,6 +148,7 @@ export class StaticGalleryRenderer implements PublicationRenderer {
       const branding = JSON.parse(target.branding_json) as PublicationBranding;
       const cssSource = await readFile(this.asset("assets", "gallery.css"), "utf8");
       const jsSource = await readFile(this.asset("assets", "gallery.js"));
+      const headersSource = await readFile(this.asset("static", "_headers"), "utf8");
       const brandedCss = `:root{--accent:${branding.accentColor};--background:${branding.backgroundColor}}\n${cssSource}`;
       const cssPath = `assets/gallery.${sha256(Buffer.from(brandedCss)).slice(0, 16)}.css`;
       const jsPath = `assets/gallery.${sha256(jsSource).slice(0, 16)}.js`;
@@ -158,7 +160,14 @@ export class StaticGalleryRenderer implements PublicationRenderer {
           copyFile(this.asset("assets", "fonts", file), join(output, "assets", "fonts", file)),
         ),
       );
-      await copyFile(this.asset("static", "_headers"), join(output, "_headers"));
+      await writeOutput(
+        output,
+        "_headers",
+        headersSource.replaceAll(
+          "__SAD_CONTENT_SECURITY_POLICY__",
+          `${contentSecurityPolicy(branding)}; frame-ancestors 'none'`,
+        ),
+      );
 
       const site: SiteContext = { baseUrl: target.base_url, branding, cssPath, jsPath };
 

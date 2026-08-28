@@ -103,6 +103,19 @@ export interface WebhookRow {
   created_at: string;
   updated_at: string;
 }
+export interface WebhookDeliveryRow {
+  id: string;
+  webhook_id: string;
+  event: string;
+  payload_json: string;
+  status: "queued" | "sending" | "succeeded" | "failed";
+  attempts: number;
+  next_attempt_at: string | null;
+  response_status: number | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
 export interface ExportRow {
   id: string;
   project_id: string;
@@ -271,6 +284,11 @@ CREATE TABLE publication_manifests (
 CREATE INDEX publication_manifests_target_idx ON publication_manifests(target_id,created_at DESC);
 `;
 
+const MIGRATION_3 = `
+CREATE INDEX IF NOT EXISTS captures_profile_status_history_idx
+ON captures(profile_id, status, captured_at DESC);
+`;
+
 export class AppDatabase {
   readonly raw: Sqlite;
 
@@ -296,6 +314,7 @@ export class AppDatabase {
     });
     apply(1, "");
     apply(2, MIGRATION_2);
+    apply(3, MIGRATION_3);
   }
 
   close(): void {
@@ -827,12 +846,45 @@ export class AppDatabase {
       )
       .get(...(before ? [profileId, before] : [profileId])) as CaptureRow | undefined;
   }
-  listCaptures(projectId: string, profileId?: string, limit = 100): CaptureRow[] {
+  listCaptures(
+    projectId: string,
+    profileId?: string,
+    limit = 100,
+    options: { status?: "all" | "succeeded" | "failed"; offset?: number } = {},
+  ): CaptureRow[] {
+    const status = options.status ?? "all";
+    const offset = options.offset ?? 0;
+    const values: Array<string | number> = [projectId];
+    if (profileId) values.push(profileId);
+    if (status !== "all") values.push(status);
+    values.push(limit, offset);
     return this.raw
       .prepare(
-        `SELECT * FROM captures WHERE project_id=? ${profileId ? "AND profile_id=?" : ""} ORDER BY captured_at DESC LIMIT ?`,
+        `SELECT * FROM captures WHERE project_id=? ${profileId ? "AND profile_id=?" : ""} ${status === "all" ? "" : "AND status=?"} ORDER BY captured_at DESC LIMIT ? OFFSET ?`,
       )
-      .all(...(profileId ? [projectId, profileId, limit] : [projectId, limit])) as CaptureRow[];
+      .all(...values) as CaptureRow[];
+  }
+  captureCounts(
+    projectId: string,
+    profileId?: string,
+  ): {
+    total: number;
+    succeeded: number;
+    failed: number;
+  } {
+    const row = this.raw
+      .prepare(
+        `SELECT count(*) total,
+          sum(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) succeeded,
+          sum(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed
+        FROM captures WHERE project_id=? ${profileId ? "AND profile_id=?" : ""}`,
+      )
+      .get(...(profileId ? [projectId, profileId] : [projectId])) as {
+      total: number;
+      succeeded: number | null;
+      failed: number | null;
+    };
+    return { total: row.total, succeeded: row.succeeded ?? 0, failed: row.failed ?? 0 };
   }
   getCapture(id: string): CaptureRow | undefined {
     return this.raw.prepare("SELECT * FROM captures WHERE id=?").get(id) as CaptureRow | undefined;
@@ -1474,6 +1526,56 @@ export class AppDatabase {
     return this.raw
       .prepare("SELECT * FROM webhooks WHERE project_id=? ORDER BY created_at")
       .all(projectId) as WebhookRow[];
+  }
+  getWebhook(id: string): WebhookRow | undefined {
+    return this.raw.prepare("SELECT * FROM webhooks WHERE id=?").get(id) as WebhookRow | undefined;
+  }
+  updateWebhook(
+    id: string,
+    input: Partial<Pick<WebhookRow, "url" | "threshold" | "events_json" | "enabled">>,
+  ): WebhookRow | undefined {
+    const current = this.getWebhook(id);
+    if (!current) return undefined;
+    this.raw
+      .prepare(
+        "UPDATE webhooks SET url=?,threshold=?,events_json=?,enabled=?,updated_at=? WHERE id=?",
+      )
+      .run(
+        input.url ?? current.url,
+        input.threshold ?? current.threshold,
+        input.events_json ?? current.events_json,
+        input.enabled ?? current.enabled,
+        new Date().toISOString(),
+        id,
+      );
+    return this.getWebhook(id);
+  }
+  rotateWebhookSecret(id: string, secretEncrypted: string): boolean {
+    return (
+      this.raw
+        .prepare("UPDATE webhooks SET secret_encrypted=?,updated_at=? WHERE id=?")
+        .run(secretEncrypted, new Date().toISOString(), id).changes > 0
+    );
+  }
+  deleteWebhook(id: string): boolean {
+    return this.raw.prepare("DELETE FROM webhooks WHERE id=?").run(id).changes > 0;
+  }
+  enqueueWebhookTest(webhookId: string, payload: unknown): string {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.raw
+      .prepare(
+        "INSERT INTO webhook_deliveries(id,webhook_id,event,payload_json,status,attempts,next_attempt_at,created_at,updated_at) VALUES (?,?, 'webhook.test',?, 'queued',0,?,?,?)",
+      )
+      .run(id, webhookId, JSON.stringify(payload), now, now, now);
+    return id;
+  }
+  listWebhookDeliveries(webhookId: string, limit = 20): WebhookDeliveryRow[] {
+    return this.raw
+      .prepare(
+        "SELECT * FROM webhook_deliveries WHERE webhook_id=? ORDER BY created_at DESC LIMIT ?",
+      )
+      .all(webhookId, limit) as WebhookDeliveryRow[];
   }
   enqueueWebhookDeliveries(
     projectId: string,

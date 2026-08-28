@@ -81,7 +81,38 @@ export interface PublicationTarget {
 }
 export interface PublicGallery {
   project: { id: string; name: string; slug: string; publishMode: string; profiles: Profile[] };
+  profileId: string;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  successfulCount: number;
+  failedCount: number;
   captures: CaptureRecord[];
+}
+export interface CapturePage {
+  captures: CaptureRecord[];
+  total: number;
+  successfulCount: number;
+  failedCount: number;
+}
+export interface Webhook {
+  id: string;
+  url: string;
+  threshold: number;
+  events: Array<"capture.changed" | "capture.failed">;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface WebhookDelivery {
+  id: string;
+  event: string;
+  status: "queued" | "sending" | "succeeded" | "failed";
+  attempts: number;
+  responseStatus: number | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface Comparison {
   first: CaptureRecord;
@@ -119,10 +150,26 @@ export const api = {
   project: (id: string) => request<ProjectDetail>(`/api/v1/projects/${id}`),
   createProject: (input: unknown) =>
     request<ProjectDetail>("/api/v1/projects", { method: "POST", body: JSON.stringify(input) }),
-  captures: (id: string, profileId?: string, limit = 200) => {
-    const query = new URLSearchParams({ limit: String(limit) });
+  captures: async (id: string, profileId?: string, limit = 12, offset = 0) => {
+    const query = new URLSearchParams({
+      status: "succeeded",
+      limit: String(limit),
+      offset: String(offset),
+    });
     if (profileId) query.set("profileId", profileId);
-    return request<CaptureRecord[]>(`/api/v1/projects/${id}/captures?${query}`);
+    const response = await fetch(`/api/v1/projects/${id}/captures?${query}`);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({ error: `HTTP ${response.status}` }))) as {
+        error?: string;
+      };
+      throw new Error(body.error ?? `Request failed with HTTP ${response.status}`);
+    }
+    return {
+      captures: (await response.json()) as CaptureRecord[],
+      total: Number(response.headers.get("x-total-count") ?? 0),
+      successfulCount: Number(response.headers.get("x-successful-count") ?? 0),
+      failedCount: Number(response.headers.get("x-failed-count") ?? 0),
+    } satisfies CapturePage;
   },
   runs: (id: string) => request<CaptureRun[]>(`/api/v1/projects/${id}/runs`),
   trigger: (id: string, idempotencyKey: string) =>
@@ -197,6 +244,7 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(input),
     }),
+  deleteProject: (id: string) => request(`/api/v1/projects/${id}`, { method: "DELETE" }),
   replaceCredentials: (id: string, input: unknown) =>
     request(`/api/v1/projects/${id}/credentials`, {
       method: "PUT",
@@ -212,6 +260,8 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(input),
     }),
+  deleteProfile: (projectId: string, profileId: string) =>
+    request(`/api/v1/projects/${projectId}/profiles/${profileId}`, { method: "DELETE" }),
   tokens: () =>
     request<Array<{ id: string; name: string; scopes: string[]; created_at: string }>>(
       "/api/v1/tokens",
@@ -224,17 +274,35 @@ export const api = {
   deleteToken: (id: string) => request(`/api/v1/tokens/${id}`, { method: "DELETE" }),
   storage: () =>
     request<{ bytes: number; files: number; databaseBytes: number }>("/api/v1/storage"),
-  webhooks: (projectId: string) =>
-    request<Array<{ id: string; url: string; threshold: number; events: string[] }>>(
-      `/api/v1/projects/${projectId}/webhooks`,
-    ),
+  webhooks: (projectId: string) => request<Webhook[]>(`/api/v1/projects/${projectId}/webhooks`),
   createWebhook: (projectId: string, input: unknown) =>
-    request<{ id: string; secret: string }>(`/api/v1/projects/${projectId}/webhooks`, {
+    request<Webhook & { secret: string }>(`/api/v1/projects/${projectId}/webhooks`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
-  publicGallery: (mode: "p" | "s", value: string) =>
-    request<PublicGallery>(`/api/public/${mode}/${value}`),
+  updateWebhook: (projectId: string, webhookId: string, input: unknown) =>
+    request<Webhook>(`/api/v1/projects/${projectId}/webhooks/${webhookId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+  deleteWebhook: (projectId: string, webhookId: string) =>
+    request(`/api/v1/projects/${projectId}/webhooks/${webhookId}`, { method: "DELETE" }),
+  rotateWebhookSecret: (projectId: string, webhookId: string) =>
+    request<{ id: string; secret: string }>(
+      `/api/v1/projects/${projectId}/webhooks/${webhookId}/rotate-secret`,
+      { method: "POST" },
+    ),
+  testWebhook: (projectId: string, webhookId: string) =>
+    request<{ deliveryId: string }>(`/api/v1/projects/${projectId}/webhooks/${webhookId}/test`, {
+      method: "POST",
+    }),
+  webhookDeliveries: (projectId: string, webhookId: string) =>
+    request<WebhookDelivery[]>(`/api/v1/projects/${projectId}/webhooks/${webhookId}/deliveries`),
+  publicGallery: (mode: "p" | "s", value: string, profileId?: string, page = 1) => {
+    const query = new URLSearchParams({ page: String(page) });
+    if (profileId) query.set("profileId", profileId);
+    return request<PublicGallery>(`/api/public/${mode}/${value}?${query}`);
+  },
   publicCompare: (mode: "p" | "s", value: string, firstId: string, secondId: string) =>
     request<Comparison>(`/api/public/${mode}/${value}/comparisons`, {
       method: "POST",

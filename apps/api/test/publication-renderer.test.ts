@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppDatabase } from "../src/database.js";
 import { STATIC_GALLERY_PAGE_SIZE, StaticGalleryRenderer } from "../src/publication-renderer.js";
+import { contentSecurityPolicy } from "../src/publication-templates.js";
 import { LocalBlobStore } from "../src/storage.js";
 
 const templateRoot = fileURLToPath(new URL("../static-gallery", import.meta.url));
@@ -55,6 +56,29 @@ describe("static gallery publication renderer", () => {
     await Promise.all(
       directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
     );
+  });
+
+  it("limits static CSP analytics exceptions to the configured provider origin", () => {
+    const branding = {
+      title: "Fixture",
+      description: "Fixture history",
+      logoText: "Fixture",
+      logoUrl: null,
+      tagline: "Recorded daily",
+      accentColor: "#dbff53",
+      backgroundColor: "#10151d",
+      darkMode: true,
+      supplementalFooter: "",
+      analytics: {
+        provider: "posthog" as const,
+        host: "https://analytics.example.com/ingest",
+        apiKey: "fixture",
+      },
+    };
+    const policy = contentSecurityPolicy(branding);
+    expect(policy).toContain("script-src 'self' https://analytics.example.com");
+    expect(policy).toContain("connect-src 'self' https://analytics.example.com");
+    expect(policy).not.toContain("/ingest");
   });
 
   it("renders deterministic, self-contained pages with permanent attribution", async () => {
@@ -212,6 +236,15 @@ describe("static gallery publication renderer", () => {
       const robots = await readFile(join(first.directory, "robots.txt"), "utf8");
       expect(robots).toContain("Disallow: /s/");
       expect(robots).toContain("Sitemap: https://history.example.com/sitemap.xml");
+      const headers = await readFile(join(first.directory, "_headers"), "utf8");
+      expect(headers).toContain("X-Content-Type-Options: nosniff");
+      expect(headers).toContain("X-Frame-Options: DENY");
+      expect(headers).toContain("Referrer-Policy: same-origin");
+      expect(headers).toContain(
+        "Content-Security-Policy: default-src 'none'; img-src 'self' data:",
+      );
+      expect(headers).toContain("frame-ancestors 'none'");
+      expect(headers).not.toContain("__SAD_CONTENT_SECURITY_POLICY__");
     } finally {
       await first.cleanup();
       await second.cleanup();

@@ -18,6 +18,7 @@
     "format:check": "prettier --check .",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:e2e": "node scripts/e2e-smoke.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm -r typecheck",
     "version:check": "node scripts/check-version.mjs",

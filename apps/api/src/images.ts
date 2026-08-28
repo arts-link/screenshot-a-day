@@ -1,6 +1,17 @@
 import pixelmatch from "pixelmatch";
 import sharp from "sharp";
 
+export const MAX_COMPARISON_PIXELS = 16_000_000;
+
+export class ComparisonTooLargeError extends Error {
+  constructor(readonly pixels: number) {
+    super(
+      `Images exceed the ${MAX_COMPARISON_PIXELS.toLocaleString("en-US")}-pixel comparison limit`,
+    );
+    this.name = "ComparisonTooLargeError";
+  }
+}
+
 export async function thumbnail(bytes: Buffer): Promise<Buffer> {
   return sharp(bytes)
     .resize({ width: 560, height: 400, fit: "inside", withoutEnlargement: true })
@@ -16,8 +27,8 @@ export async function compareImages(
   const secondMeta = await sharp(second).metadata();
   const width = Math.max(firstMeta.width ?? 0, secondMeta.width ?? 0);
   const height = Math.max(firstMeta.height ?? 0, secondMeta.height ?? 0);
-  if (!width || !height || width * height > 80_000_000)
-    throw new Error("Images are too large to compare safely");
+  if (!width || !height) throw new Error("Images do not have comparable dimensions");
+  if (width * height > MAX_COMPARISON_PIXELS) throw new ComparisonTooLargeError(width * height);
 
   const normalize = (bytes: Buffer) =>
     sharp({ create: { width, height, channels: 4, background: "#ffffff" } })

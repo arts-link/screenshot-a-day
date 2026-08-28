@@ -8,10 +8,11 @@ services:
       dockerfile: Dockerfile.api
       args:
         SAD_VERSION: 0.1.0
+        SAD_COMMIT: ${SAD_BUILD_COMMIT:-development}
     restart: unless-stopped
     init: true
     ports:
-      - "4400:4400"
+      - "${SAD_HOST_PORT:-4400}:4400"
     environment:
       SAD_DATA_DIR: /data
       SAD_PUBLIC_URL: ${SAD_PUBLIC_URL:-http://localhost:4400}
@@ -21,6 +22,7 @@ services:
       SAD_PRIVATE_TARGET_ALLOWLIST: ${SAD_PRIVATE_TARGET_ALLOWLIST:-}
       SAD_TRUST_PROXY: ${SAD_TRUST_PROXY:-false}
       SAD_LOG_LEVEL: ${SAD_LOG_LEVEL:-info}
+      SAD_PUBLICATION_DEPLOY_TIMEOUT_MS: ${SAD_PUBLICATION_DEPLOY_TIMEOUT_MS:-600000}
     volumes:
       - sad-data:/data
     healthcheck:
@@ -45,6 +47,7 @@ services:
       dockerfile: Dockerfile.worker
       args:
         SAD_VERSION: 0.1.0
+        SAD_COMMIT: ${SAD_BUILD_COMMIT:-development}
     restart: unless-stopped
     init: true
     depends_on:
@@ -54,6 +57,8 @@ services:
       SAD_API_URL: http://api:4400
       SAD_WORKER_TOKEN: ${SAD_WORKER_TOKEN:?Set SAD_WORKER_TOKEN}
       SAD_WORKER_CONCURRENCY: ${SAD_WORKER_CONCURRENCY:-1}
+      SAD_WORKER_POLL_MS: ${SAD_WORKER_POLL_MS:-2000}
+      SAD_FFMPEG_PATH: ${SAD_FFMPEG_PATH:-ffmpeg}
     security_opt:
       - no-new-privileges:true
 
