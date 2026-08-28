@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const site = resolve(root, "site");
 const canonical = "https://arts-link.github.io/screenshot-a-day/";
+export const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const requiredFiles = [
   "index.html",
   "styles.css",
@@ -29,7 +30,7 @@ requireMatch(
   "site/index.html is missing a description",
 );
 requireMatch(
-  new RegExp(`<link\\s+rel="canonical"\\s+href="${canonical.replaceAll("/", "\\/")}"`),
+  new RegExp(`<link\\s+rel="canonical"\\s+href="${escapeRegExp(canonical)}"`),
   "site/index.html has the wrong canonical URL",
 );
 requireMatch(/<meta\s+property="og:title"[^>]+>/i, "site/index.html is missing og:title");

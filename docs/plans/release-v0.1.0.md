@@ -17,7 +17,7 @@ This checklist is the durable runbook for the first Screenshot-a-Day release. Ch
 
 Refresh this section after the final push if any code changes.
 
-- `pnpm check`: 18 files and 75 tests passed, including migration 3, comparison limits/capacity/cache/rate limiting, pagination, webhook lifecycle, OpenAPI structure, and static rendering.
+- `pnpm check`: 19 files and 76 tests passed, including migration 3, comparison limits/capacity/cache/rate limiting, pagination, webhook lifecycle, OpenAPI structure, static rendering, and canonical-host validation.
 - `pnpm build` and `pnpm test:e2e` passed; the browser smoke covers administrator Compare/Configuration, API-token creation, public and unlisted galleries, mobile layout, and static cross-page selection restoration.
 - `pnpm audit --prod` reported no known vulnerabilities.
 - Both locally built Compose containers were recreated on port 4400 and reported healthy/ready with the release security headers.
