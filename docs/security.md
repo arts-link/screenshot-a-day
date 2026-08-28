@@ -4,12 +4,14 @@ Screenshot-a-Day is a privileged browser automation service. Deploy it behind HT
 
 - Initial setup uses a 15-minute one-time token printed only to API logs.
 - Passwords use Argon2id. Sessions are HTTP-only, SameSite=Lax, and secure when `SAD_PUBLIC_URL` is HTTPS.
-- Browser-origin state changes reject mismatched origins. Login and recovery endpoints are rate-limited.
+- Browser-origin state changes reject mismatched origins. Login, recovery, and comparison endpoints are rate-limited.
 - API tokens are SHA-256 hashes at rest, shown once, scoped, and optionally project-limited.
 - Target headers, cookies, and webhook signing secrets use AES-256-GCM envelopes.
 - Structured logs redact authorization, cookies, passwords, and target secret fields.
 - URL credentials are rejected. DNS answers, redirects, and subresources are checked against the private-network policy.
 - Webhook redirects are followed manually, capped at five, and have their destination DNS and address policy revalidated before every request.
+- Comparisons require two distinct successful captures from one project/profile, reject decoded images above 16 million pixels, run one at a time with a four-item queue, and use a byte-bounded short-lived cache.
+- Production responses set content-type, framing, referrer, permissions, opener, and content-security policies. HTTPS deployments also emit HSTS.
 - Workers use a dedicated bearer credential and receive secrets only for their active lease.
 - Static deployment credentials are write-only AES-256-GCM envelopes used only by the API publication process; browser workers never receive them.
 - SFTP resolves the configured host through the private-target policy, connects to a pinned resolved address, and requires the configured SHA-256 host-key fingerprint.

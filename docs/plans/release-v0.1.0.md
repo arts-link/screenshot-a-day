@@ -4,11 +4,24 @@ This checklist is the durable runbook for the first Screenshot-a-Day release. Ch
 
 ## Release preparation
 
-- [ ] Merge the release-preparation pull request after `validate`, `container-smoke`, and DCO pass.
+- [ ] Merge PR #9 after `validate`, `container-smoke`, DCO, and CodeQL pass and every conversation is resolved.
 - [ ] Confirm `main` is green and the Pages preview deploys only `site/` under `/screenshot-a-day/`.
 - [ ] Confirm `VERSION`, package manifests, contracts, Compose image pins, changelog, OCI labels, and `/version` report `0.1.0`.
 - [ ] Confirm GitHub Pages uses GitHub Actions and `main` protection requires pull requests, linear history, `validate`, `container-smoke`, and DCO.
-- [ ] Confirm private vulnerability reporting is enabled.
+- [ ] Confirm secret scanning, push protection, Dependabot alerts/security updates, CodeQL default setup, web-commit sign-off, and private vulnerability reporting are enabled.
+- [ ] Confirm every PR #9 commit contains a matching `Signed-off-by` trailer and the DCO App reports success.
+- [ ] Exercise administrator Compare and Configuration, built-in indexable and unlisted galleries, static cross-page restoration, lifecycle confirmations, and desktop/mobile layouts without console errors.
+- [ ] Complete the clean-volume backup/restore rehearsal with the original encryption key, SQLite integrity `ok`, retained image reads, and a new capture.
+
+### Current pre-merge evidence
+
+Refresh this section after the final push if any code changes.
+
+- `pnpm check`: 18 files and 75 tests passed, including migration 3, comparison limits/capacity/cache/rate limiting, pagination, webhook lifecycle, OpenAPI structure, and static rendering.
+- `pnpm build` and `pnpm test:e2e` passed; the browser smoke covers administrator Compare/Configuration, API-token creation, public and unlisted galleries, mobile layout, and static cross-page selection restoration.
+- `pnpm audit --prod` reported no known vulnerabilities.
+- Both locally built Compose containers were recreated on port 4400 and reported healthy/ready with the release security headers.
+- An isolated port-4410 restore recovered 132 captures, passed SQLite integrity, served an authenticated retained PNG, and completed a fresh Chromium capture. The rehearsal also verified that restored `/data` ownership must be normalized before startup.
 
 ## Publish v0.1.0
 
@@ -16,7 +29,7 @@ This checklist is the durable runbook for the first Screenshot-a-Day release. Ch
 - [ ] Push only `v0.1.0`; verify lightweight, mismatched, prerelease-alias, and stale-main tags fail safely.
 - [ ] Wait for both multi-architecture GHCR images, SBOMs, provenance attestations, immutable digests, and the GitHub Release.
 - [ ] Confirm the `0.1.0`, `0.1`, and `latest` tags resolve to the same stable manifests and that no floating `0` tag exists.
-- [ ] On a clean machine, pull and run Compose without building locally; test setup, all three browsers, comparison, sharing, GIF, and WebM.
+- [ ] On a clean machine, pull rather than build and run Compose; test setup, all three browsers, comparison, retention, sharing, GIF, WebM, webhook delivery, and backup/restore.
 
 ## Demo and Pages cutover
 

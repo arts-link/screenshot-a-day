@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashToken } from "@sad/core";
+import sharp from "sharp";
 import { buildApp, drainBlobDeletions } from "../src/app.js";
 import type { AppConfig } from "../src/config.js";
 import { AppDatabase } from "../src/database.js";
@@ -110,8 +111,46 @@ describe("control plane", () => {
     });
   }
 
+  async function seedCapture(
+    projectId: string,
+    profileId: string,
+    status: "succeeded" | "failed",
+    capturedAt: string,
+    color = "#000000",
+  ) {
+    db.enqueueRun(projectId, "manual", [profileId]);
+    const job = db.claimJob()!;
+    const bytes = await sharp({
+      create: { width: 20, height: 20, channels: 3, background: color },
+    })
+      .png()
+      .toBuffer();
+    const imageKey = `test/${job.id}.png`;
+    const thumbnailKey = `test/${job.id}.webp`;
+    await Promise.all([blobs.put(imageKey, bytes), blobs.put(thumbnailKey, bytes)]);
+    return db.recordCapture(job, {
+      status,
+      captured_at: capturedAt,
+      final_url: "http://localhost:9999",
+      http_status: status === "succeeded" ? 200 : null,
+      width: 20,
+      height: 20,
+      sha256: status === "succeeded" ? `${job.id}-digest` : null,
+      change_percent: status === "succeeded" ? 0 : null,
+      image_key: imageKey,
+      thumbnail_key: thumbnailKey,
+      diff_key: null,
+      error: status === "failed" ? "diagnostic failure" : null,
+      duration_ms: 1,
+    });
+  }
+
   it("reports health and exact version information", async () => {
-    expect((await app.inject({ url: "/health/ready" })).statusCode).toBe(200);
+    const health = await app.inject({ url: "/health/ready" });
+    expect(health.statusCode).toBe(200);
+    expect(health.headers["x-content-type-options"]).toBe("nosniff");
+    expect(health.headers["x-frame-options"]).toBe("DENY");
+    expect(health.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
     expect((await app.inject({ url: "/version" })).json()).toEqual({
       version: "0.1.0",
       commit: "test-commit",
@@ -123,9 +162,10 @@ describe("control plane", () => {
     expect(db.raw.prepare("SELECT version FROM schema_migrations ORDER BY version").all()).toEqual([
       { version: 1 },
       { version: 2 },
+      { version: 3 },
     ]);
     const created = await createVercelTarget();
-    expect(created.statusCode).toBe(201);
+    expect(created.statusCode, created.body).toBe(201);
     expect(created.body).not.toContain("vercel-secret-token");
     expect(created.json()).toMatchObject({
       adapter: "vercel",
@@ -457,6 +497,325 @@ describe("control plane", () => {
 
   it("rejects unauthenticated administration", async () => {
     expect((await app.inject({ url: "/api/v1/projects" })).statusCode).toBe(401);
+  });
+
+  it("filters capture status before pagination and validates every query bound", async () => {
+    const project = (await createFixtureProject("capture-pagination")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const profileId = project.profiles[0]!.id;
+    for (let index = 0; index < 14; index++)
+      await seedCapture(
+        project.id,
+        profileId,
+        "succeeded",
+        new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+      );
+    for (let index = 0; index < 3; index++)
+      await seedCapture(
+        project.id,
+        profileId,
+        "failed",
+        new Date(Date.UTC(2026, 1, 1, 0, index)).toISOString(),
+      );
+    const cookie = `sad_session=${sessionToken}`;
+    const first = await app.inject({
+      url: `/api/v1/projects/${project.id}/captures?profileId=${profileId}&status=succeeded&limit=12&offset=0`,
+      headers: { cookie },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toHaveLength(12);
+    expect(first.headers["x-total-count"]).toBe("14");
+    expect(first.headers["x-successful-count"]).toBe("14");
+    expect(first.headers["x-failed-count"]).toBe("3");
+    const older = await app.inject({
+      url: `/api/v1/projects/${project.id}/captures?profileId=${profileId}&status=succeeded&limit=12&offset=12`,
+      headers: { cookie },
+    });
+    expect(older.json()).toHaveLength(2);
+    for (const query of ["limit=-1", "limit=0", "limit=501", "limit=nope", "offset=-1"])
+      expect(
+        (
+          await app.inject({
+            url: `/api/v1/projects/${project.id}/captures?${query}`,
+            headers: { cookie },
+          })
+        ).statusCode,
+      ).toBe(400);
+  });
+
+  it("pages successful public captures per profile without failed attempts consuming the limit", async () => {
+    const project = (await createFixtureProject("public-pagination")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const profileId = project.profiles[0]!.id;
+    for (let index = 0; index < 13; index++)
+      await seedCapture(
+        project.id,
+        profileId,
+        "succeeded",
+        new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
+      );
+    for (let index = 0; index < 4; index++)
+      await seedCapture(
+        project.id,
+        profileId,
+        "failed",
+        new Date(Date.UTC(2026, 1, 1, 0, index)).toISOString(),
+      );
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie: `sad_session=${sessionToken}` },
+      payload: { publishMode: "indexable" },
+    });
+    const first = await app.inject({
+      url: `/api/public/p/public-pagination?profileId=${profileId}&page=1`,
+    });
+    expect(first.json()).toMatchObject({
+      profileId,
+      page: 1,
+      pageSize: 12,
+      pageCount: 2,
+      successfulCount: 13,
+      failedCount: 4,
+    });
+    expect(first.json<{ captures: unknown[] }>().captures).toHaveLength(12);
+    const second = await app.inject({
+      url: `/api/public/p/public-pagination?profileId=${profileId}&page=2`,
+    });
+    expect(second.json<{ captures: unknown[] }>().captures).toHaveLength(1);
+  });
+
+  it("compares only distinct successful captures from the same project and profile", async () => {
+    const project = (await createFixtureProject("comparison-validation")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const profileId = project.profiles[0]!.id;
+    const earlier = await seedCapture(
+      project.id,
+      profileId,
+      "succeeded",
+      "2026-01-01T00:00:00.000Z",
+      "#000000",
+    );
+    const later = await seedCapture(
+      project.id,
+      profileId,
+      "succeeded",
+      "2026-01-02T00:00:00.000Z",
+      "#ffffff",
+    );
+    const failed = await seedCapture(project.id, profileId, "failed", "2026-01-03T00:00:00.000Z");
+    const cookie = `sad_session=${sessionToken}`;
+    const valid = await app.inject({
+      method: "POST",
+      url: "/api/v1/comparisons",
+      headers: { cookie },
+      payload: { firstId: later.id, secondId: earlier.id },
+    });
+    expect(valid.statusCode).toBe(200);
+    expect(valid.json()).toMatchObject({
+      first: { id: earlier.id },
+      second: { id: later.id },
+      changePercent: 100,
+    });
+    for (const pair of [
+      { firstId: earlier.id, secondId: earlier.id },
+      { firstId: earlier.id, secondId: failed.id },
+    ])
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/v1/comparisons",
+            headers: { cookie },
+            payload: pair,
+          })
+        ).statusCode,
+      ).toBe(400);
+  });
+
+  it("rate-limits unauthenticated public pixel comparisons", async () => {
+    const project = (await createFixtureProject("public-comparison-rate")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const profileId = project.profiles[0]!.id;
+    const earlier = await seedCapture(
+      project.id,
+      profileId,
+      "succeeded",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const later = await seedCapture(
+      project.id,
+      profileId,
+      "succeeded",
+      "2026-01-02T00:00:00.000Z",
+      "#ffffff",
+    );
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie: `sad_session=${sessionToken}` },
+      payload: { publishMode: "indexable" },
+    });
+    for (let request = 0; request < 6; request++)
+      expect(
+        (
+          await app.inject({
+            method: "POST",
+            url: "/api/public/p/public-comparison-rate/comparisons",
+            payload: { firstId: earlier.id, secondId: later.id },
+          })
+        ).statusCode,
+      ).toBe(200);
+    const limited = await app.inject({
+      method: "POST",
+      url: "/api/public/p/public-comparison-rate/comparisons",
+      payload: { firstId: earlier.id, secondId: later.id },
+    });
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers["retry-after"]).toBeDefined();
+  });
+
+  it("manages the complete webhook lifecycle and retains test delivery status", async () => {
+    const project = (await createFixtureProject("webhook-lifecycle")).json<{ id: string }>();
+    const cookie = `sad_session=${sessionToken}`;
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/webhooks`,
+      headers: { cookie },
+      payload: {
+        url: "https://localhost/sad",
+        threshold: 1,
+        events: ["capture.changed"],
+      },
+    });
+    expect(created.statusCode, created.body).toBe(201);
+    const webhook = created.json<{ id: string; secret: string }>();
+    const paused = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}`,
+      headers: { cookie },
+      payload: { enabled: false, threshold: 2 },
+    });
+    expect(paused.json()).toMatchObject({ enabled: false, threshold: 2 });
+    expect(
+      (
+        await app.inject({
+          method: "POST",
+          url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}/test`,
+          headers: { cookie },
+          payload: {},
+        })
+      ).statusCode,
+    ).toBe(409);
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}`,
+      headers: { cookie },
+      payload: { enabled: true },
+    });
+    const rotated = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}/rotate-secret`,
+      headers: { cookie },
+      payload: {},
+    });
+    expect(rotated.json<{ secret: string }>().secret).not.toBe(webhook.secret);
+    const test = await app.inject({
+      method: "POST",
+      url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}/test`,
+      headers: { cookie },
+      payload: {},
+    });
+    expect(test.statusCode).toBe(202);
+    const deliveries = await app.inject({
+      url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}/deliveries`,
+      headers: { cookie },
+    });
+    expect(deliveries.json()).toMatchObject([
+      {
+        id: test.json<{ deliveryId: string }>().deliveryId,
+        event: "webhook.test",
+        status: "queued",
+      },
+    ]);
+    expect(
+      (
+        await app.inject({
+          method: "DELETE",
+          url: `/api/v1/projects/${project.id}/webhooks/${webhook.id}`,
+          headers: { cookie },
+        })
+      ).statusCode,
+    ).toBe(204);
+    expect(db.listWebhookDeliveries(webhook.id)).toEqual([]);
+  });
+
+  it("publishes request bodies and security schemes for every supported write operation", async () => {
+    const response = await app.inject({ url: "/docs/api/json" });
+    expect(response.statusCode, response.body).toBe(200);
+    const document = response.json<{
+      paths: Record<
+        string,
+        Record<
+          string,
+          {
+            requestBody?: unknown;
+            responses: Record<string, { headers?: Record<string, unknown> }>;
+          }
+        >
+      >;
+      components: { securitySchemes: Record<string, unknown> };
+    }>();
+    expect(document.components.securitySchemes).toHaveProperty("sessionCookie");
+    expect(document.components.securitySchemes).toHaveProperty("bearerToken");
+    const writes = Object.values(document.paths).flatMap((path) =>
+      ["post", "put", "patch"].flatMap((method) => (path[method] ? [path[method]] : [])),
+    );
+    expect(writes.length).toBeGreaterThan(20);
+    expect(writes.every((operation) => operation.requestBody)).toBe(true);
+    expect(Object.keys(document.paths).some((path) => path.startsWith("/internal/"))).toBe(false);
+    expect(document.paths["/api/v1/auth/login"]!.post!.responses).toHaveProperty("200");
+    expect(document.paths["/api/v1/auth/recover"]!.post!.responses).toHaveProperty("204");
+    expect(
+      document.paths["/api/v1/publication-targets/{id}/credentials"]!.put!.responses,
+    ).toHaveProperty("204");
+    expect(
+      document.paths["/api/v1/projects/{id}/webhooks/{webhookId}/rotate-secret"]!.post!.responses,
+    ).toHaveProperty("200");
+    expect(document.paths["/api/v1/projects/{id}/captures"]!.get!.responses["200"]!.headers)
+      .toMatchInlineSnapshot(`
+        {
+          "X-Failed-Count": {
+            "description": "All failed captures in the selected project/profile",
+            "schema": {
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          "X-Successful-Count": {
+            "description": "All successful captures in the selected project/profile",
+            "schema": {
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+          "X-Total-Count": {
+            "description": "Captures matching the requested status filter",
+            "schema": {
+              "minimum": 0,
+              "type": "integer",
+            },
+          },
+        }
+      `);
   });
 
   it("renews an active worker lease without changing its token", async () => {

@@ -146,7 +146,7 @@ function analyticsOrigin(host: string): string {
   return `${url.protocol}//${url.host}`;
 }
 
-function contentSecurityPolicy(branding: PublicationBranding): string {
+export function contentSecurityPolicy(branding: PublicationBranding): string {
   const extra =
     branding.analytics.provider === "plausible"
       ? "https://plausible.io"

@@ -15,4 +15,4 @@ SQLite is the metadata source of truth. The API enables foreign keys, WAL mode, 
 - `publication_jobs` are target-scoped leased build/deploy operations with five transient retries.
 - `publication_manifests` audit successful deployments and bound SFTP cleanup to files managed by Screenshot-a-Day.
 
-Migration `1` creates the v0.1.0 schema. Forward migration `2` adds portable static publishing without changing existing built-in gallery behavior. Migrations are forward-only and recorded in `schema_migrations`. Blob keys are opaque application data and should not be constructed by integrations.
+Migration `1` creates the v0.1.0 schema. Forward migration `2` adds portable static publishing without changing existing built-in gallery behavior. Migration `3` adds a profile/status/time capture-history index so failed attempts cannot crowd successful results out of paginated queries. It changes no stored data. Migrations are forward-only and recorded in `schema_migrations`. Blob keys are opaque application data and should not be constructed by integrations.

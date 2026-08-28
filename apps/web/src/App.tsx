@@ -13,7 +13,7 @@ import {
   useParams,
 } from "react-router-dom";
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
-import { api, type Comparison, type ProjectDetail } from "./api";
+import { api, type Comparison, type ProjectDetail, type Webhook } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
 import {
   AccentRule,
@@ -34,11 +34,9 @@ import {
   CAPTURES_PER_PAGE,
   changeComparisonSlot,
   emptyComparisonSelection,
-  paginateCaptures,
   removeComparisonSlot,
   selectCapture,
   selectionRole,
-  successfulCaptures,
   validComparisonPair,
   type ComparisonSelection,
   type ComparisonSlot,
@@ -565,8 +563,8 @@ function ProjectComparePage() {
     project.data?.profiles.find((profile) => profile.settings.enabled) ??
     project.data?.profiles[0];
   const captures = useQuery({
-    queryKey: ["captures", id, activeProfile?.id],
-    queryFn: () => api.captures(id, activeProfile!.id, 500),
+    queryKey: ["captures", id, activeProfile?.id, page],
+    queryFn: () => api.captures(id, activeProfile!.id, CAPTURES_PER_PAGE, page * CAPTURES_PER_PAGE),
     enabled: Boolean(activeProfile),
     refetchInterval: 5000,
   });
@@ -614,10 +612,11 @@ function ProjectComparePage() {
 
   if (project.isLoading) return <Splash />;
   if (!project.data) return <ErrorNotice error={project.error} />;
-  const successful = successfulCaptures(captures.data ?? []);
-  const failedCount = (captures.data?.length ?? 0) - successful.length;
-  const pageCount = Math.max(1, Math.ceil(successful.length / CAPTURES_PER_PAGE));
-  const visible = paginateCaptures(successful, Math.min(page, pageCount - 1));
+  const successful = captures.data?.captures ?? [];
+  const failedCount = captures.data?.failedCount ?? 0;
+  const successfulCount = captures.data?.successfulCount ?? 0;
+  const pageCount = Math.max(1, Math.ceil(successfulCount / CAPTURES_PER_PAGE));
+  const visible = successful;
   const requestCapture = () => {
     if (captureLock.current || captureBusy) return;
     captureLock.current = true;
@@ -700,7 +699,7 @@ function ProjectComparePage() {
               <h2>{activeProfile.name} history</h2>
             </div>
             <div className="capture-browser-meta">
-              <span>{successful.length} comparable captures</span>
+              <span>{successfulCount} comparable captures</span>
               {failedCount > 0 && (
                 <span>
                   {failedCount} failed {failedCount === 1 ? "attempt is" : "attempts are"}{" "}
@@ -737,7 +736,7 @@ function ProjectComparePage() {
               Successful captures for this profile will appear here.
             </Empty>
           )}
-          {successful.length > CAPTURES_PER_PAGE && (
+          {successfulCount > CAPTURES_PER_PAGE && (
             <nav className="capture-pagination" aria-label="Capture history pages">
               <Button
                 variant="secondary"
@@ -771,6 +770,7 @@ function ProjectComparePage() {
 function ProjectConfigurationPage() {
   const { id = "" } = useParams();
   const client = useQueryClient();
+  const navigate = useNavigate();
   const project = useQuery({
     queryKey: ["project", id],
     queryFn: () => api.project(id),
@@ -784,6 +784,7 @@ function ProjectConfigurationPage() {
   const [error, setError] = useState<unknown>();
   const [publicationAction, setPublicationAction] = useState<string>();
   const [detachDialog, setDetachDialog] = useState<"remote" | "force">();
+  const [deleteProjectOpen, setDeleteProjectOpen] = useState(false);
   const refreshPublication = async () => {
     await Promise.all([
       client.invalidateQueries({ queryKey: ["project", id] }),
@@ -875,7 +876,22 @@ function ProjectConfigurationPage() {
             <strong>Administrator only</strong>
           )}
           {p.publishMode === "unlisted" && (
-            <small>Anyone with this secret URL can view and share the gallery.</small>
+            <>
+              <small>Anyone with this secret URL can view and share the gallery.</small>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={publicationBusy}
+                onClick={() =>
+                  void runPublicationAction("rotate-token", () =>
+                    api.publication(id, "unlisted", true),
+                  )
+                }
+              >
+                {publicationAction === "rotate-token" && <Spinner />}
+                Rotate secret URL
+              </Button>
+            </>
           )}
         </div>
         <div className="publishing-destination">
@@ -1055,6 +1071,7 @@ function ProjectConfigurationPage() {
               key={profile.id}
               projectId={id}
               profile={profile}
+              canDelete={p.profiles.length > 1}
               onChanged={() => client.invalidateQueries({ queryKey: ["project", id] })}
             />
           ))}
@@ -1068,6 +1085,43 @@ function ProjectConfigurationPage() {
         project={p}
         onChanged={() => client.invalidateQueries({ queryKey: ["project", id] })}
       />
+      <section className="configuration-section project-danger-zone">
+        <div className="configuration-heading">
+          <div>
+            <Eyebrow tone="muted">Danger zone</Eyebrow>
+            <h2>Delete project</h2>
+          </div>
+          <p>Permanently remove the project, retained captures, exports, and webhook history.</p>
+        </div>
+        <Button variant="danger" onClick={() => setDeleteProjectOpen(true)}>
+          Delete {p.name}
+        </Button>
+      </section>
+      <ConfirmationDialog
+        open={deleteProjectOpen}
+        onOpenChange={setDeleteProjectOpen}
+        title="Delete this project?"
+        confirmLabel="Delete project permanently"
+        phrase={p.name}
+        busy={publicationAction === "delete-project"}
+        onConfirm={() => {
+          setPublicationAction("delete-project");
+          setError(undefined);
+          void api
+            .deleteProject(id)
+            .then(async () => {
+              await client.invalidateQueries({ queryKey: ["projects"] });
+              navigate("/");
+            })
+            .catch(setError)
+            .finally(() => setPublicationAction(undefined));
+        }}
+      >
+        <p>
+          This permanently deletes <strong>{p.name}</strong>, its local images, exports, profiles,
+          webhooks, and delivery history. Static publication must be detached first.
+        </p>
+      </ConfirmationDialog>
     </>
   );
 }
@@ -1129,14 +1183,18 @@ function profileFromForm(data: FormData): CaptureProfileInput {
 function ProfileSettings({
   projectId,
   profile,
+  canDelete,
   onChanged,
 }: {
   projectId: string;
   profile: Awaited<ReturnType<typeof api.project>>["profiles"][number];
+  canDelete: boolean;
   onChanged: () => void;
 }) {
   const [error, setError] = useState<unknown>();
   const [saved, setSaved] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const settings = profile.settings;
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1155,7 +1213,7 @@ function ProfileSettings({
   };
   return (
     <details className="profile-settings">
-      <summary>Edit capture profile</summary>
+      <summary>Edit {profile.name}</summary>
       <ErrorNotice error={error} />
       {saved && (
         <div className="success-notice">Profile saved; run a test capture before scheduling.</div>
@@ -1268,11 +1326,267 @@ function ProfileSettings({
           <input name="enabled" type="checkbox" defaultChecked={settings.enabled} />
           Capture this profile in project runs
         </label>
-        <Button type="submit" variant="secondary">
-          Save profile
-        </Button>
+        <div className="profile-form-actions">
+          <Button type="submit" variant="secondary">
+            Save profile
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={!canDelete}
+            title={canDelete ? undefined : "A project must retain at least one profile"}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete profile
+          </Button>
+        </div>
       </form>
+      <ConfirmationDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={`Delete ${profile.name}?`}
+        confirmLabel="Delete profile"
+        busy={deleting}
+        onConfirm={() => {
+          setDeleting(true);
+          setError(undefined);
+          void api
+            .deleteProfile(projectId, profile.id)
+            .then(() => {
+              setDeleteOpen(false);
+              onChanged();
+            })
+            .catch(setError)
+            .finally(() => setDeleting(false));
+        }}
+      >
+        <p>Its retained captures and exports will also be removed permanently.</p>
+      </ConfirmationDialog>
     </details>
+  );
+}
+
+function WebhookCard({
+  projectId,
+  hook,
+  onChanged,
+  onNotice,
+  onError,
+}: {
+  projectId: string;
+  hook: Webhook;
+  onChanged: () => Promise<unknown>;
+  onNotice: (notice: string) => void;
+  onError: (error: unknown) => void;
+}) {
+  const [busy, setBusy] = useState<string>();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [revealedSecret, setRevealedSecret] = useState<string>();
+  const [secretCopied, setSecretCopied] = useState(false);
+  const deliveries = useQuery({
+    queryKey: ["webhook-deliveries", projectId, hook.id],
+    queryFn: () => api.webhookDeliveries(projectId, hook.id),
+    refetchInterval: (query) =>
+      query.state.data?.some((delivery) => ["queued", "sending"].includes(delivery.status))
+        ? 1500
+        : false,
+  });
+  const run = async (name: string, action: () => Promise<unknown>, notice: string) => {
+    setBusy(name);
+    onError(undefined);
+    try {
+      await action();
+      onNotice(notice);
+      await Promise.all([onChanged(), deliveries.refetch()]);
+      setDeleteOpen(false);
+    } catch (caught) {
+      onError(caught);
+    } finally {
+      setBusy(undefined);
+    }
+  };
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await run(
+      "save",
+      () =>
+        api.updateWebhook(projectId, hook.id, {
+          url: String(data.get("url")),
+          threshold: Number(data.get("threshold")),
+          events: ["capture.changed", "capture.failed"].filter((eventName) => data.has(eventName)),
+        }),
+      "Webhook settings saved.",
+    );
+  };
+  return (
+    <article className="webhook-card">
+      <form onSubmit={save}>
+        <div className="webhook-card-heading">
+          <h4>{hook.enabled ? "Active webhook" : "Paused webhook"}</h4>
+          <Status value={hook.enabled ? "active" : "paused"} />
+        </div>
+        <Field label="HTTPS endpoint">
+          <input name="url" type="url" required defaultValue={hook.url} />
+        </Field>
+        <Field label="Change threshold (%)">
+          <input
+            name="threshold"
+            type="number"
+            min="0"
+            max="100"
+            step="0.001"
+            defaultValue={hook.threshold}
+          />
+        </Field>
+        <div className="webhook-events">
+          {(["capture.changed", "capture.failed"] as const).map((eventName) => (
+            <label className="check-line" key={eventName}>
+              <input
+                type="checkbox"
+                name={eventName}
+                defaultChecked={hook.events.includes(eventName)}
+              />
+              {eventName}
+            </label>
+          ))}
+        </div>
+        <div className="webhook-actions">
+          <Button type="submit" variant="secondary" size="sm" disabled={Boolean(busy)}>
+            {busy === "save" && <Spinner />} Save
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={Boolean(busy)}
+            onClick={() =>
+              void run(
+                "toggle",
+                () => api.updateWebhook(projectId, hook.id, { enabled: !hook.enabled }),
+                hook.enabled ? "Webhook paused." : "Webhook enabled.",
+              )
+            }
+          >
+            {busy === "toggle" && <Spinner />} {hook.enabled ? "Pause" : "Enable"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={Boolean(busy) || !hook.enabled}
+            onClick={() =>
+              void run(
+                "test",
+                () => api.testWebhook(projectId, hook.id),
+                "Signed test delivery queued.",
+              )
+            }
+          >
+            {busy === "test" && <Spinner />} Send test
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={Boolean(busy)}
+            onClick={() => {
+              setBusy("rotate");
+              void api
+                .rotateWebhookSecret(projectId, hook.id)
+                .then(({ secret }) => {
+                  setRevealedSecret(secret);
+                  setSecretCopied(false);
+                  onNotice("Webhook secret rotated. Copy the new value from this webhook now.");
+                })
+                .catch(onError)
+                .finally(() => setBusy(undefined));
+            }}
+          >
+            {busy === "rotate" && <Spinner />} Rotate secret
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            disabled={Boolean(busy)}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete
+          </Button>
+        </div>
+        {revealedSecret && (
+          <div className="token-reveal webhook-secret-reveal" role="status" aria-live="polite">
+            <div className="token-reveal-head">
+              <div>
+                <strong>New signing secret ready</strong>
+                <span>Update the receiver now. It cannot be shown again.</span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setRevealedSecret(undefined)}
+              >
+                Dismiss
+              </Button>
+            </div>
+            <div className="token-reveal-value">
+              <code>{revealedSecret}</code>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(revealedSecret)
+                    .then(() => setSecretCopied(true))
+                    .catch(() =>
+                      onError(
+                        new Error(
+                          "The secret could not be copied. Select it and copy it manually.",
+                        ),
+                      ),
+                    );
+                }}
+              >
+                {secretCopied ? "Copied ✓" : "Copy secret"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </form>
+      <div className="webhook-deliveries">
+        <strong>Recent deliveries</strong>
+        {deliveries.data?.length ? (
+          deliveries.data.slice(0, 5).map((delivery) => (
+            <span key={delivery.id}>
+              <Status value={delivery.status} /> {delivery.event} · attempts {delivery.attempts}
+              {delivery.responseStatus ? ` · HTTP ${delivery.responseStatus}` : ""}
+              {delivery.error ? ` · ${delivery.error}` : ""}
+            </span>
+          ))
+        ) : (
+          <span>No deliveries yet.</span>
+        )}
+      </div>
+      <ConfirmationDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete this webhook?"
+        confirmLabel="Delete webhook"
+        busy={busy === "delete"}
+        onConfirm={() =>
+          void run(
+            "delete",
+            () => api.deleteWebhook(projectId, hook.id),
+            "Webhook and delivery history deleted.",
+          )
+        }
+      >
+        <p>Queued deliveries and retained delivery history will also be deleted.</p>
+      </ConfirmationDialog>
+    </article>
   );
 }
 
@@ -1383,7 +1697,7 @@ function ProjectControls({
               <input name="scheduleTimezone" defaultValue={project.scheduleTimezone} />
             </Field>
             <div className="form-row">
-              <Field label="Keep days">
+              <Field label="Retention period (days)">
                 <input
                   name="retentionDays"
                   type="number"
@@ -1391,7 +1705,7 @@ function ProjectControls({
                   defaultValue={project.retentionDays ?? ""}
                 />
               </Field>
-              <Field label="Keep count">
+              <Field label="Retained captures per profile">
                 <input
                   name="retentionCount"
                   type="number"
@@ -1425,32 +1739,39 @@ function ProjectControls({
           <p>Send change events and authenticate captures of protected pages.</p>
         </div>
         <div className="control-columns">
-          <form onSubmit={addWebhook}>
-            <h3>Change webhook</h3>
-            <Field label="HTTPS endpoint">
-              <input name="url" type="url" required placeholder="https://example.com/hooks/sad" />
-            </Field>
-            <Field label="Change threshold (%)">
-              <input
-                name="threshold"
-                type="number"
-                min="0"
-                max="100"
-                step="0.001"
-                defaultValue="0"
-              />
-            </Field>
-            <Button type="submit" variant="secondary">
-              Add signed webhook
-            </Button>
+          <div>
+            <form onSubmit={addWebhook}>
+              <h3>Change webhook</h3>
+              <Field label="HTTPS endpoint">
+                <input name="url" type="url" required placeholder="https://example.com/hooks/sad" />
+              </Field>
+              <Field label="Change threshold (%)">
+                <input
+                  name="threshold"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.001"
+                  defaultValue="0"
+                />
+              </Field>
+              <Button type="submit" variant="secondary">
+                Add signed webhook
+              </Button>
+            </form>
             <div className="hook-list">
               {hooks.data?.map((hook) => (
-                <span key={hook.id}>
-                  {hook.url} · {hook.threshold}%
-                </span>
+                <WebhookCard
+                  key={hook.id}
+                  projectId={project.id}
+                  hook={hook}
+                  onChanged={() => hooks.refetch()}
+                  onNotice={setNotice}
+                  onError={setError}
+                />
               ))}
             </div>
-          </form>
+          </div>
           <form onSubmit={replaceCredentials}>
             <h3>Target authentication</h3>
             <p className="form-help">
@@ -1497,7 +1818,7 @@ function AddProfileForm({ projectId, onChanged }: { projectId: string; onChanged
         waitForSelector: null,
         timeoutMs: 30_000,
       });
-      setNotice("Profile added. Edit it below, then run a test capture.");
+      setNotice("Profile added. Edit it above, then run a test capture.");
       setError(undefined);
       form.reset();
       onChanged();
@@ -1586,8 +1907,8 @@ function PublicGallery() {
   const [selection, setSelection] =
     useState<ComparisonSelection<CaptureRecord>>(emptyComparisonSelection);
   const gallery = useQuery({
-    queryKey: ["public", mode, value],
-    queryFn: () => api.publicGallery(mode, value),
+    queryKey: ["public", mode, value, profileId, page],
+    queryFn: () => api.publicGallery(mode, value, profileId, page + 1),
   });
   if (gallery.isLoading) return <Splash />;
   if (!gallery.data)
@@ -1598,15 +1919,14 @@ function PublicGallery() {
     );
   const activeProfile =
     gallery.data.project.profiles.find((profile) => profile.id === profileId) ??
+    gallery.data.project.profiles.find((profile) => profile.id === gallery.data.profileId) ??
     gallery.data.project.profiles.find((profile) => profile.settings.enabled) ??
     gallery.data.project.profiles[0];
-  const profileCaptures = gallery.data.captures.filter(
-    (capture) => capture.profileId === activeProfile?.id,
-  );
-  const successful = successfulCaptures(profileCaptures);
-  const failedCount = profileCaptures.length - successful.length;
-  const pageCount = Math.max(1, Math.ceil(successful.length / CAPTURES_PER_PAGE));
-  const visible = paginateCaptures(successful, Math.min(page, pageCount - 1));
+  const successful = gallery.data.captures;
+  const failedCount = gallery.data.failedCount;
+  const pageCount = gallery.data.pageCount;
+  const currentPage = gallery.data.page - 1;
+  const visible = successful;
   const changeProfile = (nextProfileId: string) => {
     setProfileId(nextProfileId);
     setPage(0);
@@ -1619,7 +1939,7 @@ function PublicGallery() {
         <Eyebrow>Visual record</Eyebrow>
         <h1>{gallery.data.project.name}</h1>
         <p>
-          {gallery.data.captures.length} retained moments across{" "}
+          {gallery.data.successfulCount} comparable moments for this profile across{" "}
           {gallery.data.project.profiles.length} profile
           {gallery.data.project.profiles.length === 1 ? "" : "s"}.
         </p>
@@ -1652,7 +1972,7 @@ function PublicGallery() {
             <h2>{activeProfile?.name ?? "Capture history"}</h2>
           </div>
           <div className="capture-browser-meta">
-            <span>{successful.length} comparable captures</span>
+            <span>{gallery.data.successfulCount} comparable captures</span>
             {failedCount > 0 && <span>{failedCount} failed unavailable</span>}
           </div>
         </div>
@@ -1699,22 +2019,22 @@ function PublicGallery() {
           </article>
         ))}
       </div>
-      {successful.length > CAPTURES_PER_PAGE && (
+      {gallery.data.successfulCount > CAPTURES_PER_PAGE && (
         <nav className="capture-pagination" aria-label="Capture history pages">
           <Button
             variant="secondary"
-            disabled={page === 0}
-            onClick={() => setPage((current) => Math.max(0, current - 1))}
+            disabled={currentPage === 0}
+            onClick={() => setPage(Math.max(0, currentPage - 1))}
           >
             ← Newer
           </Button>
           <span>
-            Page {Math.min(page, pageCount - 1) + 1} of {pageCount}
+            Page {currentPage + 1} of {pageCount}
           </span>
           <Button
             variant="secondary"
-            disabled={page >= pageCount - 1}
-            onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}
+            disabled={currentPage >= pageCount - 1}
+            onClick={() => setPage(Math.min(pageCount - 1, currentPage + 1))}
           >
             Older →
           </Button>
@@ -1737,10 +2057,12 @@ function Settings() {
   const tokens = useQuery({ queryKey: ["tokens"], queryFn: api.tokens });
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
   const [revealed, setRevealed] = useState<string>();
+  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<unknown>();
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     try {
       const result = await api.createToken({
         name: String(data.get("name")),
@@ -1748,10 +2070,22 @@ function Settings() {
         projectIds: null,
       });
       setRevealed(result.token);
+      setCopied(false);
+      setError(undefined);
+      form.reset();
       await tokens.refetch();
-      event.currentTarget.reset();
     } catch (caught) {
       setError(caught);
+    }
+  };
+  const copyRevealedToken = async () => {
+    if (!revealed) return;
+    try {
+      await navigator.clipboard.writeText(revealed);
+      setCopied(true);
+      setError(undefined);
+    } catch {
+      setError(new Error("The token could not be copied. Select it and copy it manually."));
     }
   };
   const format = (bytes = 0) =>
@@ -1770,19 +2104,31 @@ function Settings() {
         </div>
       </header>
       <ErrorNotice error={error} />
-      {revealed && (
-        <div className="token-reveal">
-          <strong>Copy this token now</strong>
-          <code>{revealed}</code>
-          <span>It cannot be shown again.</span>
-        </div>
-      )}
       <div className="settings-grid">
         <PublicationSettings />
-        <Card>
+        <Card className="api-access-card">
           <AccentRule />
           <h2>API access</h2>
           <p>Tokens are hashed at rest. This quick form creates read and capture-trigger access.</p>
+          {revealed && (
+            <div className="token-reveal" role="status" aria-live="polite">
+              <div className="token-reveal-head">
+                <div>
+                  <strong>New token ready</strong>
+                  <span>Copy it now. It cannot be shown again.</span>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => setRevealed(undefined)}>
+                  Dismiss
+                </Button>
+              </div>
+              <div className="token-reveal-value">
+                <code>{revealed}</code>
+                <Button size="sm" variant="secondary" onClick={copyRevealedToken}>
+                  {copied ? "Copied ✓" : "Copy token"}
+                </Button>
+              </div>
+            </div>
+          )}
           <form onSubmit={create}>
             <Field label="Token name">
               <input name="name" required placeholder="Deployment workflow" />

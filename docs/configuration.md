@@ -2,14 +2,17 @@
 
 The API refuses to start without three independent secrets. Put them in `.env` for Compose, give the file mode `0600`, and preserve `SAD_ENCRYPTION_KEY` in backups.
 
+Compose always uses port `4400` and `/data` inside the API container. Set `SAD_HOST_PORT` to change only the host-side port. Direct process and custom image deployments may use `SAD_PORT` and `SAD_DATA_DIR` instead.
+
 | Variable                            | Service           | Default                 | Purpose                                                                            |
 | ----------------------------------- | ----------------- | ----------------------- | ---------------------------------------------------------------------------------- |
 | `SAD_ENCRYPTION_KEY`                | API               | required                | Exactly 32 random bytes encoded as Base64; encrypts target and webhook secrets     |
 | `SAD_SESSION_SECRET`                | API               | required                | At least 32 characters; protects signed cookie handling                            |
 | `SAD_WORKER_TOKEN`                  | both              | required                | At least 32 characters and identical in API and worker                             |
 | `SAD_PUBLIC_URL`                    | API               | `http://localhost:4400` | External origin used for cookies, worker artifact URLs, and webhook links          |
-| `SAD_DATA_DIR`                      | API               | `./data`                | SQLite and blob root; `/data` in Compose                                           |
-| `SAD_PORT`                          | API               | `4400`                  | HTTP listen port                                                                   |
+| `SAD_HOST_PORT`                     | Compose           | `4400`                  | Host port mapped to the API container's fixed port 4400                            |
+| `SAD_DATA_DIR`                      | direct API        | `./data`                | SQLite and blob root; fixed to `/data` by Compose                                  |
+| `SAD_PORT`                          | direct API        | `4400`                  | HTTP listen port; fixed to `4400` by Compose                                       |
 | `SAD_TRUST_PROXY`                   | API               | `false`                 | Trust forwarding headers only behind a controlled reverse proxy                    |
 | `SAD_PRIVATE_TARGET_ALLOWLIST`      | both through jobs | empty                   | Comma-separated exact hosts, wildcard domains, IPs, or CIDRs intentionally allowed |
 | `SAD_WORKER_CONCURRENCY`            | worker            | `1`                     | Parallel browser/export jobs per worker                                            |

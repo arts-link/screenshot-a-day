@@ -31,3 +31,31 @@ for (const file of files) {
   }
 }
 console.log(`Checked ${files.length} documentation files.`);
+
+const envExample = await readFile(".env.example", "utf8");
+const compose = await readFile("compose.yaml", "utf8");
+const composeVariables = [
+  "SAD_HOST_PORT",
+  "SAD_PUBLIC_URL",
+  "SAD_ENCRYPTION_KEY",
+  "SAD_SESSION_SECRET",
+  "SAD_WORKER_TOKEN",
+  "SAD_PRIVATE_TARGET_ALLOWLIST",
+  "SAD_TRUST_PROXY",
+  "SAD_WORKER_CONCURRENCY",
+  "SAD_WORKER_POLL_MS",
+  "SAD_FFMPEG_PATH",
+  "SAD_LOG_LEVEL",
+  "SAD_PUBLICATION_DEPLOY_TIMEOUT_MS",
+  "SAD_BUILD_COMMIT",
+];
+for (const variable of composeVariables) {
+  if (!envExample.includes(`${variable}=`))
+    throw new Error(`.env.example omits Compose variable ${variable}`);
+  if (!compose.includes(`\${${variable}`))
+    throw new Error(`compose.yaml does not interpolate documented variable ${variable}`);
+}
+for (const directOnly of ["SAD_PORT", "SAD_DATA_DIR"])
+  if (envExample.match(new RegExp(`^${directOnly}=`, "m")))
+    throw new Error(`.env.example must not advertise direct-only ${directOnly} for Compose`);
+console.log(`Checked ${composeVariables.length} Compose environment variables.`);

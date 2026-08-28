@@ -23,12 +23,14 @@ The authenticated API includes projects, profiles, runs, captures, comparisons, 
 - `PUT /api/v1/projects/{id}/credentials` replaces all encrypted target headers and cookies. Secrets are write-only.
 - `POST`, `PUT`, and `DELETE /api/v1/projects/{id}/profiles/...` manage capture profiles. Editing a profile clears its successful-test state.
 - `POST /api/v1/projects/{id}/runs` creates an idempotent batch across selected enabled profiles.
-- `POST /api/v1/comparisons` compares two successful captures belonging to one profile.
+- `POST /api/v1/comparisons` compares two distinct successful captures belonging to one project and profile. Decoded comparisons are limited to 16 million pixels.
 - `POST /api/v1/projects/{id}/profiles/{profileId}/exports` queues GIF or WebM generation.
-- `POST /api/v1/projects/{id}/webhooks` creates a signed webhook and returns its secret once.
+- `POST /api/v1/projects/{id}/webhooks` creates a signed webhook and returns its secret once. Webhook update, pause, deletion, secret rotation, signed test delivery, and recent delivery history are available below that webhook resource.
 - `POST /api/v1/tokens` returns a bearer token once; `DELETE /api/v1/tokens/{id}` revokes it.
 
 Public gallery data uses `/api/public/p/{slug}` or `/api/public/s/{share-token}`. Its public comparison route accepts two capture IDs without exposing administrative metadata. Immutable capture images and stable `latest.gif`/`latest.webm` artifacts are served beneath `/p/{slug}` and `/s/{share-token}`.
+
+Capture history is newest-first. `GET /api/v1/projects/{id}/captures` accepts `profileId`, `status=all|succeeded|failed`, `limit` from 1 through 500, and a non-negative `offset`. Its array response is unchanged; `X-Total-Count`, `X-Successful-Count`, and `X-Failed-Count` provide exact pagination totals. Built-in public galleries accept `profileId` and a one-based `page`, returning 12 successful captures plus successful/failed totals.
 
 Export requests accept `frameDurationMs`, `canvasWidth`, `canvasHeight`, `timestampOverlay`, `background`, and `frameLimit`. A custom range may be selected with explicit `captureIds`, an inclusive ISO `from`/`to` window, or both; every selected capture must belong to the requested profile.
 
@@ -38,4 +40,4 @@ Scheduling an enabled profile normally requires a prior successful capture. Auto
 
 Compatible additions remain in `/api/v1`. A removal or semantic breaking change requires a parallel API version and documented migration period. Product SemVer does not silently override that promise.
 
-Errors have an HTTP status and `{ "error": "human-readable summary" }`. Validation failures also include structured `issues`. Requests are limited to 30 MB in v0.1.0.
+Errors have an HTTP status and `{ "error": "human-readable summary" }`. Validation failures also include structured `issues`. Comparison capacity uses `429` for rate limits, `422` for oversized decoded images, and `503` with `Retry-After` when the bounded comparison queue is full. Requests are limited to 30 MB in v0.1.0.

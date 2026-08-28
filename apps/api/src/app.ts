@@ -49,8 +49,11 @@ import {
   type ProjectRow,
   type PublicationJobRow,
   type PublicationTargetRow,
+  type WebhookDeliveryRow,
+  type WebhookRow,
 } from "./database.js";
-import { compareImages, thumbnail } from "./images.js";
+import { ComparisonCapacityError, ComparisonService } from "./comparisons.js";
+import { ComparisonTooLargeError, compareImages, thumbnail } from "./images.js";
 import { startScheduler } from "./scheduler.js";
 import { LocalBlobStore, type BlobStore } from "./storage.js";
 import { startWebhookDispatcher } from "./webhooks.js";
@@ -60,12 +63,49 @@ import {
   type PublicationRenderer,
 } from "./publication-renderer.js";
 import { nextPublicationRun, PublicationService } from "./publication-service.js";
+import { openApiSchemas, openApiTransform } from "./openapi.js";
 
 interface Dependencies {
   config: AppConfig;
   db?: AppDatabase;
   blobs?: BlobStore;
   publicationRenderer?: PublicationRenderer;
+}
+
+const captureQuerySchema = z.object({
+  profileId: z.string().optional(),
+  status: z.enum(["all", "succeeded", "failed"]).default("all"),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
+const comparisonInputSchema = z.object({
+  firstId: z.string().min(1),
+  secondId: z.string().min(1),
+});
+
+function comparisonRows(
+  db: AppDatabase,
+  firstId: string,
+  secondId: string,
+  projectId?: string,
+): [CaptureRow, CaptureRow] | null {
+  if (firstId === secondId) return null;
+  const first = db.getCapture(firstId);
+  const second = db.getCapture(secondId);
+  if (
+    !first?.image_key ||
+    !second?.image_key ||
+    first.status !== "succeeded" ||
+    second.status !== "succeeded" ||
+    first.project_id !== second.project_id ||
+    first.profile_id !== second.profile_id ||
+    (projectId && first.project_id !== projectId)
+  )
+    return null;
+  return Date.parse(first.captured_at) <= Date.parse(second.captured_at)
+    ? [first, second]
+    : [second, first];
 }
 
 export async function drainBlobDeletions(
@@ -200,6 +240,31 @@ function publicationTargetDto(target: PublicationTargetRow, db: AppDatabase) {
   };
 }
 
+function webhookDto(hook: WebhookRow) {
+  return {
+    id: hook.id,
+    url: hook.url,
+    threshold: hook.threshold,
+    events: JSON.parse(hook.events_json) as string[],
+    enabled: Boolean(hook.enabled),
+    createdAt: hook.created_at,
+    updatedAt: hook.updated_at,
+  };
+}
+
+function webhookDeliveryDto(delivery: WebhookDeliveryRow) {
+  return {
+    id: delivery.id,
+    event: delivery.event,
+    status: delivery.status,
+    attempts: delivery.attempts,
+    responseStatus: delivery.response_status,
+    error: delivery.error,
+    createdAt: delivery.created_at,
+    updatedAt: delivery.updated_at,
+  };
+}
+
 function workerAuthorized(request: FastifyRequest, config: AppConfig): boolean {
   const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
   return Boolean(bearer && hashToken(bearer) === hashToken(config.workerToken));
@@ -242,6 +307,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     renderer: publicationRenderer,
     log: app.log,
   });
+  const comparisons = new ComparisonService();
   void cleanupStalePublicationDirectories().catch((error) =>
     app.log.warn(
       { error: error instanceof Error ? error.message : "unknown" },
@@ -266,7 +332,16 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     openapi: {
       info: { title: "Screenshot-a-Day API", version: PRODUCT_VERSION },
       servers: [{ url: config.publicUrl }],
+      components: {
+        schemas: openApiSchemas as never,
+        securitySchemes: {
+          sessionCookie: { type: "apiKey", in: "cookie", name: SESSION_COOKIE },
+          bearerToken: { type: "http", scheme: "bearer" },
+        },
+      },
     },
+    hideUntagged: true,
+    transform: openApiTransform,
   });
   await app.register(swaggerUi, { routePrefix: "/docs/api" });
   app.addContentTypeParser(
@@ -278,6 +353,10 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     if (error instanceof z.ZodError)
       return reply.code(400).send({ error: "Validation failed", issues: error.issues });
     if (error instanceof TargetPolicyError) return reply.code(400).send({ error: error.message });
+    if (error instanceof ComparisonTooLargeError)
+      return reply.code(422).send({ error: error.message, pixels: error.pixels });
+    if (error instanceof ComparisonCapacityError)
+      return reply.header("retry-after", "5").code(503).send({ error: error.message });
     const message = error instanceof Error ? error.message : "Unknown error";
     const statusCode =
       typeof error === "object" &&
@@ -301,6 +380,24 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     if (origin && new URL(origin).host !== new URL(config.publicUrl).host) {
       return reply.code(403).send({ error: "Cross-origin state changes are not allowed" });
     }
+  });
+
+  app.addHook("onSend", async (request, reply, payload) => {
+    reply
+      .header("x-content-type-options", "nosniff")
+      .header("referrer-policy", "same-origin")
+      .header("x-frame-options", "DENY")
+      .header("cross-origin-opener-policy", "same-origin")
+      .header("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=()")
+      .header(
+        "content-security-policy",
+        request.url.startsWith("/docs/api")
+          ? "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+          : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      );
+    if (config.publicUrl.startsWith("https://"))
+      reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
+    return payload;
   });
 
   app.get("/health/live", async () => ({ status: "ok" }));
@@ -804,16 +901,29 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     );
     return reply.code(202).send({ runId });
   });
-  app.get<{ Params: { id: string }; Querystring: { profileId?: string; limit?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: Record<string, unknown> }>(
     "/api/v1/projects/:id/captures",
     async (request, reply) => {
       if (!requireIdentity(db, request, reply, "read", request.params.id)) return;
+      if (!db.getProject(request.params.id))
+        return reply.code(404).send({ error: "Project not found" });
+      const query = captureQuerySchema.parse(request.query);
+      if (query.profileId) {
+        const profile = db.getProfile(query.profileId);
+        if (!profile || profile.project_id !== request.params.id)
+          return reply.code(404).send({ error: "Profile not found" });
+      }
+      const counts = db.captureCounts(request.params.id, query.profileId);
+      const total = query.status === "all" ? counts.total : counts[query.status];
+      reply
+        .header("x-total-count", String(total))
+        .header("x-successful-count", String(counts.succeeded))
+        .header("x-failed-count", String(counts.failed));
       return db
-        .listCaptures(
-          request.params.id,
-          request.query.profileId,
-          Math.min(Number(request.query.limit ?? 100), 500),
-        )
+        .listCaptures(request.params.id, query.profileId, query.limit, {
+          status: query.status,
+          offset: query.offset,
+        })
         .map(captureDto);
     },
   );
@@ -848,33 +958,34 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     ),
   );
 
-  app.post("/api/v1/comparisons", async (request, reply) => {
-    if (!requireIdentity(db, request, reply, "read")) return;
-    const { firstId, secondId } = z
-      .object({ firstId: z.string(), secondId: z.string() })
-      .parse(request.body);
-    const first = db.getCapture(firstId);
-    const second = db.getCapture(secondId);
-    if (!first?.image_key || !second?.image_key || first.profile_id !== second.profile_id)
-      return reply
-        .code(400)
-        .send({ error: "Two successful captures from one profile are required" });
-    if (!requireIdentity(db, request, reply, "read", first.project_id)) return;
-    if (!requireIdentity(db, request, reply, "read", second.project_id)) return;
-    const result = await compareImages(
-      await blobs.get(first.image_key),
-      await blobs.get(second.image_key),
-    );
-    return {
-      first: captureDto(first),
-      second: captureDto(second),
-      changePercent: result.changePercent,
-      exactMatch: first.sha256 === second.sha256,
-      width: result.width,
-      height: result.height,
-      diffDataUrl: `data:image/png;base64,${result.diff.toString("base64")}`,
-    };
-  });
+  app.post(
+    "/api/v1/comparisons",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "read")) return;
+      const { firstId, secondId } = comparisonInputSchema.parse(request.body);
+      const pair = comparisonRows(db, firstId, secondId);
+      if (!pair)
+        return reply
+          .code(400)
+          .send({ error: "Two distinct successful captures from one profile are required" });
+      const [first, second] = pair;
+      if (!requireIdentity(db, request, reply, "read", first.project_id)) return;
+      const result = await comparisons.run(`${first.id}:${second.id}`, async () => [
+        await blobs.get(first.image_key!),
+        await blobs.get(second.image_key!),
+      ]);
+      return {
+        first: captureDto(first),
+        second: captureDto(second),
+        changePercent: result.changePercent,
+        exactMatch: first.sha256 === second.sha256,
+        width: result.width,
+        height: result.height,
+        diffDataUrl: `data:image/png;base64,${result.diff.toString("base64")}`,
+      };
+    },
+  );
 
   app.get("/api/v1/tokens", async (request, reply) =>
     requireInstanceIdentity(db, request, reply, "manage")
@@ -917,14 +1028,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
 
   app.get<{ Params: { id: string } }>("/api/v1/projects/:id/webhooks", async (request, reply) =>
     requireIdentity(db, request, reply, "manage", request.params.id)
-      ? db.listWebhooks(request.params.id).map((hook) => ({
-          id: hook.id,
-          url: hook.url,
-          threshold: hook.threshold,
-          events: JSON.parse(hook.events_json),
-          enabled: Boolean(hook.enabled),
-          createdAt: hook.created_at,
-        }))
+      ? db.listWebhooks(request.params.id).map(webhookDto)
       : undefined,
   );
   app.post<{ Params: { id: string } }>("/api/v1/projects/:id/webhooks", async (request, reply) => {
@@ -947,12 +1051,94 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       input.events,
     );
     return reply.code(201).send({
-      id: hook.id,
+      ...webhookDto(hook),
       secret,
-      url: hook.url,
-      threshold: hook.threshold,
-      events: input.events,
     });
+  });
+  app.patch<{ Params: { id: string; webhookId: string } }>(
+    "/api/v1/projects/:id/webhooks/:webhookId",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+      const hook = db.getWebhook(request.params.webhookId);
+      if (!hook || hook.project_id !== request.params.id)
+        return reply.code(404).send({ error: "Webhook not found" });
+      const input = z
+        .object({
+          url: z.url().optional(),
+          threshold: z.number().min(0).max(100).optional(),
+          events: z
+            .array(z.enum(["capture.changed", "capture.failed"]))
+            .min(1)
+            .optional(),
+          enabled: z.boolean().optional(),
+        })
+        .refine((value) => Object.keys(value).length > 0, "At least one change is required")
+        .parse(request.body);
+      if (input.url) await assertSafeUrl(input.url, config.privateTargetAllowlist);
+      const updated = db.updateWebhook(hook.id, {
+        ...(input.url === undefined ? {} : { url: input.url }),
+        ...(input.threshold === undefined ? {} : { threshold: input.threshold }),
+        ...(input.events === undefined ? {} : { events_json: JSON.stringify(input.events) }),
+        ...(input.enabled === undefined ? {} : { enabled: input.enabled ? 1 : 0 }),
+      });
+      return webhookDto(updated!);
+    },
+  );
+  app.delete<{ Params: { id: string; webhookId: string } }>(
+    "/api/v1/projects/:id/webhooks/:webhookId",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+      const hook = db.getWebhook(request.params.webhookId);
+      if (!hook || hook.project_id !== request.params.id)
+        return reply.code(404).send({ error: "Webhook not found" });
+      db.deleteWebhook(hook.id);
+      return reply.code(204).send();
+    },
+  );
+  app.post<{ Params: { id: string; webhookId: string } }>(
+    "/api/v1/projects/:id/webhooks/:webhookId/rotate-secret",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+      const hook = db.getWebhook(request.params.webhookId);
+      if (!hook || hook.project_id !== request.params.id)
+        return reply.code(404).send({ error: "Webhook not found" });
+      const secret = randomToken(32);
+      db.rotateWebhookSecret(hook.id, encryptJson({ secret }, config.encryptionKey));
+      return { id: hook.id, secret };
+    },
+  );
+  app.post<{ Params: { id: string; webhookId: string } }>(
+    "/api/v1/projects/:id/webhooks/:webhookId/test",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+      const hook = db.getWebhook(request.params.webhookId);
+      if (!hook || hook.project_id !== request.params.id)
+        return reply.code(404).send({ error: "Webhook not found" });
+      if (!hook.enabled)
+        return reply.code(409).send({ error: "Enable the webhook before testing" });
+      const deliveryId = db.enqueueWebhookTest(hook.id, {
+        schemaVersion: WEBHOOK_SCHEMA_VERSION,
+        productVersion: PRODUCT_VERSION,
+        event: "webhook.test",
+        projectId: request.params.id,
+        webhookId: hook.id,
+        createdAt: new Date().toISOString(),
+      });
+      return reply.code(202).send({ deliveryId });
+    },
+  );
+  app.get<{
+    Params: { id: string; webhookId: string };
+    Querystring: Record<string, unknown>;
+  }>("/api/v1/projects/:id/webhooks/:webhookId/deliveries", async (request, reply) => {
+    if (!requireIdentity(db, request, reply, "manage", request.params.id)) return;
+    const hook = db.getWebhook(request.params.webhookId);
+    if (!hook || hook.project_id !== request.params.id)
+      return reply.code(404).send({ error: "Webhook not found" });
+    const { limit } = z
+      .object({ limit: z.coerce.number().int().min(1).max(100).default(20) })
+      .parse(request.query);
+    return db.listWebhookDeliveries(hook.id, limit).map(webhookDeliveryDto);
   });
 
   app.post<{ Params: { id: string; profileId: string } }>(
@@ -1256,15 +1442,43 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     return reply.code(retrying ? 202 : 201).send({ retrying });
   });
 
-  async function publicGallery(kind: "slug" | "token", value: string, reply: FastifyReply) {
+  async function publicGallery(
+    kind: "slug" | "token",
+    value: string,
+    queryInput: Record<string, unknown>,
+    reply: FastifyReply,
+  ) {
     const project = db.getPublishedProject(kind, value);
     if (!project) return reply.code(404).send({ error: "Gallery not found" });
     if (kind === "token") reply.header("x-robots-tag", "noindex, nofollow");
+    const query = z
+      .object({
+        profileId: z.string().optional(),
+        page: z.coerce.number().int().min(1).default(1),
+      })
+      .parse(queryInput);
+    const profiles = db.listProfiles(project.id);
+    const profile = query.profileId
+      ? profiles.find((candidate) => candidate.id === query.profileId)
+      : (profiles.find((candidate) => candidate.enabled) ?? profiles[0]);
+    if (!profile) return reply.code(404).send({ error: "Capture profile not found" });
+    const counts = db.captureCounts(project.id, profile.id);
+    const pageSize = 12;
+    const pageCount = Math.max(1, Math.ceil(counts.succeeded / pageSize));
+    const page = Math.min(query.page, pageCount);
     return {
       project: publicProject(project, db),
+      profileId: profile.id,
+      page,
+      pageSize,
+      pageCount,
+      successfulCount: counts.succeeded,
+      failedCount: counts.failed,
       captures: db
-        .listCaptures(project.id, undefined, 200)
-        .filter((capture) => capture.status === "succeeded")
+        .listCaptures(project.id, profile.id, pageSize, {
+          status: "succeeded",
+          offset: (page - 1) * pageSize,
+        })
         .map((capture) => ({
           ...captureDto(capture),
           imageUrl: `/${kind === "slug" ? "p" : "s"}/${value}/captures/${capture.id}/image`,
@@ -1272,14 +1486,17 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         })),
     };
   }
-  app.get<{ Params: { slug: string } }>("/api/public/p/:slug", async (request, reply) =>
-    publicGallery("slug", request.params.slug, reply),
+  app.get<{ Params: { slug: string }; Querystring: Record<string, unknown> }>(
+    "/api/public/p/:slug",
+    async (request, reply) => publicGallery("slug", request.params.slug, request.query, reply),
   );
-  app.get<{ Params: { token: string } }>("/api/public/s/:token", async (request, reply) =>
-    publicGallery("token", request.params.token, reply),
+  app.get<{ Params: { token: string }; Querystring: Record<string, unknown> }>(
+    "/api/public/s/:token",
+    async (request, reply) => publicGallery("token", request.params.token, request.query, reply),
   );
   app.post<{ Params: { kind: "p" | "s"; value: string } }>(
     "/api/public/:kind/:value/comparisons",
+    { config: { rateLimit: { max: 6, timeWindow: "1 minute" } } },
     async (request, reply) => {
       if (request.params.kind !== "p" && request.params.kind !== "s")
         return reply.code(404).send({ error: "Gallery not found" });
@@ -1287,25 +1504,17 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       const project = db.getPublishedProject(kind, request.params.value);
       if (!project) return reply.code(404).send({ error: "Gallery not found" });
       if (kind === "token") reply.header("x-robots-tag", "noindex, nofollow");
-      const { firstId, secondId } = z
-        .object({ firstId: z.string(), secondId: z.string() })
-        .parse(request.body);
-      const first = db.getCapture(firstId);
-      const second = db.getCapture(secondId);
-      if (
-        !first?.image_key ||
-        !second?.image_key ||
-        first.project_id !== project.id ||
-        second.project_id !== project.id ||
-        first.profile_id !== second.profile_id
-      )
+      const { firstId, secondId } = comparisonInputSchema.parse(request.body);
+      const pair = comparisonRows(db, firstId, secondId, project.id);
+      if (!pair)
         return reply
           .code(400)
-          .send({ error: "Two successful captures from one profile are required" });
-      const comparison = await compareImages(
-        await blobs.get(first.image_key),
-        await blobs.get(second.image_key),
-      );
+          .send({ error: "Two distinct successful captures from one profile are required" });
+      const [first, second] = pair;
+      const comparison = await comparisons.run(`${first.id}:${second.id}`, async () => [
+        await blobs.get(first.image_key!),
+        await blobs.get(second.image_key!),
+      ]);
       const prefix = `/${request.params.kind}/${request.params.value}/captures`;
       const publicDto = (capture: CaptureRow) => ({
         ...captureDto(capture),

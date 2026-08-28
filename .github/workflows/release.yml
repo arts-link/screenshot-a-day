@@ -39,6 +39,7 @@ jobs:
       - run: pnpm --filter @sad/worker exec playwright install --with-deps chromium firefox webkit
       - run: pnpm check
       - run: pnpm build
+      - run: pnpm test:e2e
 
   images:
     needs: verify
