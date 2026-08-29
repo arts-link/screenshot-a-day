@@ -211,25 +211,59 @@ function Dashboard() {
       {creating && <CreateProject onClose={() => setCreating(false)} />}
       {projects.data?.length ? (
         <div className="project-grid">
-          {projects.data.map((project) => (
-            <Link className="project-card" to={`/projects/${project.id}/compare`} key={project.id}>
-              <div className="project-top">
-                <AccentRule />
-                <Badge tone={project.publishMode === "indexable" ? "accent" : "neutral"}>
-                  {project.publishMode}
-                </Badge>
-              </div>
-              <h2>{project.name}</h2>
-              <p>{project.url}</p>
-              <div className="project-meta">
-                {project.profileCount} profile{project.profileCount === 1 ? "" : "s"}
-                <span aria-hidden="true">·</span>
-                {project.latestCaptureAt
-                  ? new Date(project.latestCaptureAt).toLocaleDateString()
-                  : "No captures"}
-              </div>
-            </Link>
-          ))}
+          {projects.data.map((project) => {
+            const compareUrl = `/projects/${project.id}/compare`;
+            const galleryUrl = projectGalleryUrl(project, location.origin);
+            return (
+              <article className="project-card" key={project.id}>
+                <Link className="project-card-main" to={compareUrl}>
+                  {project.latestThumbnailUrl ? (
+                    <div className="project-card-preview">
+                      <img
+                        src={project.latestThumbnailUrl}
+                        alt={`Latest capture of ${project.name}`}
+                        loading="lazy"
+                      />
+                    </div>
+                  ) : (
+                    <div className="project-card-preview empty">
+                      <span>No captures yet</span>
+                    </div>
+                  )}
+                  <div className="project-card-body">
+                    <div className="project-top">
+                      <AccentRule />
+                      <Badge tone={project.publishMode === "indexable" ? "accent" : "neutral"}>
+                        {project.publishMode}
+                      </Badge>
+                    </div>
+                    <h2>{project.name}</h2>
+                    <p>{project.url}</p>
+                    <div className="project-meta">
+                      {project.profileCount} profile{project.profileCount === 1 ? "" : "s"}
+                      <span aria-hidden="true">·</span>
+                      {project.latestCaptureAt
+                        ? new Date(project.latestCaptureAt).toLocaleDateString()
+                        : "No captures"}
+                    </div>
+                  </div>
+                </Link>
+                <div className="project-card-actions">
+                  <Link to={compareUrl}>Open project →</Link>
+                  {galleryUrl && (
+                    <a
+                      className="project-gallery-link"
+                      href={galleryUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Open gallery ↗
+                    </a>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : (
         !projects.isLoading && (

@@ -271,6 +271,7 @@ export interface ProjectSummary {
   scheduleTimezone: string;
   profileCount: number;
   latestCaptureAt: string | null;
+  latestThumbnailUrl: string | null;
   createdAt: string;
 }
 

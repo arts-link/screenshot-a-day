@@ -21,6 +21,9 @@ export interface ProjectDetail extends ProjectSummary {
   retentionCount: number | null;
   staticPublication: StaticPublication | null;
 }
+export interface ProjectListItem extends ProjectSummary {
+  staticPublication: StaticPublication | null;
+}
 export interface StaticPublication {
   targetId: string;
   targetName: string;
@@ -157,7 +160,7 @@ export const api = {
   logout: () => request("/api/v1/auth/logout", { method: "POST" }),
   me: () => request<{ authenticated: boolean }>("/api/v1/auth/me"),
   version: () => request<VersionInfo>("/version"),
-  projects: () => request<ProjectSummary[]>("/api/v1/projects"),
+  projects: () => request<ProjectListItem[]>("/api/v1/projects"),
   project: (id: string) => request<ProjectDetail>(`/api/v1/projects/${id}`),
   createProject: (input: unknown) =>
     request<ProjectDetail>("/api/v1/projects", { method: "POST", body: JSON.stringify(input) }),

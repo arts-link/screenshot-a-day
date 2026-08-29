@@ -589,6 +589,33 @@ describe("control plane", () => {
     expect(second.json<{ captures: unknown[] }>().captures).toHaveLength(1);
   });
 
+  it("includes the latest successful thumbnail in project summaries", async () => {
+    const project = (await createFixtureProject("dashboard-thumbnail")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const profileId = project.profiles[0]!.id;
+    const successful = await seedCapture(
+      project.id,
+      profileId,
+      "succeeded",
+      "2026-01-01T00:00:00.000Z",
+    );
+    await seedCapture(project.id, profileId, "failed", "2026-01-02T00:00:00.000Z");
+
+    const response = await app.inject({
+      url: "/api/v1/projects",
+      headers: { cookie: `sad_session=${sessionToken}` },
+    });
+    const summary = response
+      .json<Array<{ id: string; latestCaptureAt: string; latestThumbnailUrl: string }>>()
+      .find((candidate) => candidate.id === project.id);
+    expect(summary).toMatchObject({
+      latestCaptureAt: "2026-01-01T00:00:00.000Z",
+      latestThumbnailUrl: `/api/v1/captures/${successful.id}/thumbnail`,
+    });
+  });
+
   it("compares only distinct successful captures from the same project and profile", async () => {
     const project = (await createFixtureProject("comparison-validation")).json<{
       id: string;
