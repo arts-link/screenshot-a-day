@@ -13,6 +13,22 @@ export interface Identity {
   projectIds: string[] | null;
 }
 
+export function parseBearerToken(authorization: string | undefined): string | null {
+  if (!authorization || authorization.length < 8 || authorization.length > 8192) return null;
+  if (authorization.slice(0, 6).toLowerCase() !== "bearer") return null;
+
+  let tokenStart = 6;
+  if (authorization[tokenStart] !== " " && authorization[tokenStart] !== "\t") return null;
+  while (authorization[tokenStart] === " " || authorization[tokenStart] === "\t") tokenStart++;
+  if (tokenStart === authorization.length) return null;
+
+  for (let index = tokenStart; index < authorization.length; index++) {
+    const code = authorization.charCodeAt(index);
+    if (code <= 0x20 || code === 0x7f) return null;
+  }
+  return authorization.slice(tokenStart);
+}
+
 export class SetupManager {
   private tokenHash: string | null = null;
   private expiresAt = 0;
@@ -57,7 +73,7 @@ export function createSession(db: AppDatabase, userId: string): { token: string;
 }
 
 export function authenticate(db: AppDatabase, request: FastifyRequest): Identity | null {
-  const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const bearer = parseBearerToken(request.headers.authorization);
   if (bearer) {
     const token = db.getApiToken(hashToken(bearer));
     if (!token) return null;

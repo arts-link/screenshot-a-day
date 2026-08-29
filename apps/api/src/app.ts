@@ -36,6 +36,7 @@ import {
   authenticate,
   createSession,
   hashPassword,
+  parseBearerToken,
   requireIdentity,
   requireInstanceIdentity,
   SESSION_COOKIE,
@@ -298,7 +299,7 @@ function webhookDeliveryDto(delivery: WebhookDeliveryRow) {
 }
 
 function workerAuthorized(request: FastifyRequest, config: AppConfig): boolean {
-  const bearer = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const bearer = parseBearerToken(request.headers.authorization);
   return Boolean(bearer && hashToken(bearer) === hashToken(config.workerToken));
 }
 
