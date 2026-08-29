@@ -1219,23 +1219,79 @@ legend {
   gap: 8px;
 }
 
-.export-control > div {
+.export-downloads {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
 }
 
+.export-downloads > span:first-child {
+  margin-right: auto;
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.export-downloads > small {
+  color: var(--text-muted);
+}
+
+.export-generation {
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+}
+
+.export-generation > summary,
+.public-export-details > summary {
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--text-body);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.export-generation > summary::-webkit-details-marker,
+.public-export-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.export-generation > summary::after,
+.public-export-details > summary::after {
+  content: "+";
+  float: right;
+  color: var(--accent);
+}
+
+.export-generation[open] > summary::after,
+.public-export-details[open] > summary::after {
+  content: "−";
+}
+
+.export-generation-body {
+  padding: 0 12px 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.export-control {
+  grid-template-columns: auto minmax(120px, 1fr);
+  align-items: center;
+}
+
 .export-control small,
-.public-export-control small,
-.export-help,
-.public-export-help {
+.export-help {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
 }
 
-.export-help,
-.public-export-help {
+.export-help {
   max-width: 620px;
   margin: 0;
 }
@@ -2086,9 +2142,23 @@ input[type="range"] {
   align-content: start;
 }
 
-.public-export-help {
-  max-width: 460px;
-  text-align: right;
+.public-export-details {
+  min-width: 230px;
+  border: 1px solid var(--border-subtle);
+}
+
+.public-export-details > div {
+  padding: 0 12px 12px;
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+}
+
+.public-export-details p {
+  margin: 4px 0 0;
 }
 
 .public-grid {
@@ -2264,10 +2334,6 @@ input[type="range"] {
   .public-export-panel {
     width: 100%;
     justify-items: stretch;
-  }
-
-  .public-export-help {
-    text-align: left;
   }
 
   .publishing-destination,
