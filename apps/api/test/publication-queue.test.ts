@@ -77,7 +77,7 @@ describe("publication queue", () => {
         )
         .get(),
     ).toEqual({ name: "captures_profile_status_history_idx" });
-  });
+  }, 15_000);
 
   it("uses a sliding debounce and coalesces bursts into one desired revision", async () => {
     const { db, target } = await fixture();

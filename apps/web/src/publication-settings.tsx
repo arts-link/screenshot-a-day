@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, type PublicationTarget } from "./api";
 import {
@@ -13,7 +13,30 @@ import {
   Spinner,
   Status,
 } from "./components";
-import { publicationJobInFlight } from "./publication-status";
+import {
+  formatPublicationElapsed,
+  publicationJobInFlight,
+  publicationTargetActionLabel,
+  publicationTargetStatus,
+} from "./publication-status";
+
+const PUBLICATION_PHASES = ["queued", "building", "deploying"] as const;
+
+function usePublicationElapsed(startedAt: string | number | undefined, active: boolean): string {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (!active || startedAt === undefined) return;
+    const start = typeof startedAt === "number" ? startedAt : Date.parse(startedAt);
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+    const initial = window.setTimeout(update, 0);
+    const timer = window.setInterval(update, 1000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [active, startedAt]);
+  return formatPublicationElapsed(elapsedSeconds);
+}
 
 function TargetCard({
   target,
@@ -27,8 +50,10 @@ function TargetCard({
   onError: (error: unknown) => void;
 }) {
   const [action, setAction] = useState<"verify" | "publish">();
+  const [publishStartedAt, setPublishStartedAt] = useState<number>();
   const run = async (name: typeof action, work: () => Promise<unknown>) => {
     setAction(name);
+    if (name === "publish") setPublishStartedAt(Date.now());
     onError(undefined);
     try {
       await work();
@@ -39,14 +64,26 @@ function TargetCard({
       setAction(undefined);
     }
   };
-  const busy = Boolean(action || publicationJobInFlight(target.latestJob));
+  const status = publicationTargetStatus(target);
+  const publishing = action === "publish" || status.busy;
+  const busy = Boolean(action || status.busy);
+  const elapsed = usePublicationElapsed(
+    target.latestJob && publicationJobInFlight(target.latestJob)
+      ? target.latestJob.createdAt
+      : publishStartedAt,
+    publishing,
+  );
+  const activePhase =
+    status.busy && PUBLICATION_PHASES.includes(status.phase as (typeof PUBLICATION_PHASES)[number])
+      ? PUBLICATION_PHASES.indexOf(status.phase as (typeof PUBLICATION_PHASES)[number])
+      : 0;
   return (
-    <article className="target-card">
+    <article className="target-card" aria-busy={publishing}>
       <div className="target-card-identity">
         <strong>{target.name}</strong>
         <span>
           {target.adapter} · {target.projectCount} project{target.projectCount === 1 ? "" : "s"} ·{" "}
-          {target.dirtyRevision > target.publishedRevision ? "dirty" : target.state}
+          {status.label}
         </span>
       </div>
       <div className="target-card-destination">
@@ -57,6 +94,11 @@ function TargetCard({
           {target.scheduleMode}
           {target.nextRunAt ? ` · next ${new Date(target.nextRunAt).toLocaleString()}` : ""}
         </span>
+        {target.latestJob?.status === "succeeded" && !publishing && (
+          <span className="target-card-published">
+            Last published {new Date(target.latestJob.updatedAt).toLocaleString()}
+          </span>
+        )}
         {target.lastVerificationError && (
           <span className="warning-copy">Connection needs attention</span>
         )}
@@ -65,6 +107,7 @@ function TargetCard({
         <Button
           variant="secondary"
           disabled={busy}
+          aria-busy={action === "verify"}
           onClick={() => void run("verify", () => api.verifyPublicationTarget(target.id))}
         >
           {action === "verify" && <Spinner />}
@@ -73,19 +116,64 @@ function TargetCard({
         <Button
           variant="secondary"
           disabled={busy}
+          aria-busy={publishing}
           onClick={() => void run("publish", () => api.publishTarget(target.id))}
         >
-          {action === "publish" && <Spinner />}
-          Publish now →
+          {publishing && <Spinner />}
+          {publicationTargetActionLabel(action === "publish", status)}
         </Button>
-        <Button variant="secondary" disabled={Boolean(action)} onClick={onEdit}>
+        <Button variant="secondary" disabled={busy} onClick={onEdit}>
           Edit
         </Button>
       </div>
-      {action && (
+      {action === "verify" && (
         <span className="target-action-status" role="status" aria-live="polite">
-          {action === "verify" ? "Checking destination connection…" : "Queueing publication…"}
+          Checking destination connection…
         </span>
+      )}
+      {publishing && (
+        <div className="target-publication-progress" role="status" aria-live="polite">
+          <div className="target-publication-progress-head">
+            <span>
+              <Spinner />
+              <strong>{action === "publish" ? "Queueing publication" : status.headline}</strong>
+            </span>
+            <span>{elapsed}</span>
+          </div>
+          <div className="target-publication-steps" aria-label="Publication progress">
+            {PUBLICATION_PHASES.map((phase, index) => (
+              <span
+                key={phase}
+                className={index < activePhase ? "complete" : index === activePhase ? "active" : ""}
+              >
+                {phase}
+              </span>
+            ))}
+          </div>
+          <p>
+            {action === "publish" ? "Sending this publication to the queue." : status.detail}{" "}
+            <strong>You can leave this page; progress is saved.</strong>
+          </p>
+        </div>
+      )}
+      {!publishing && status.phase === "failed" && (
+        <div className="target-publication-result failed" role="alert">
+          <strong>{status.headline}</strong>
+          <span>{status.detail} Review the destination or retry the publication.</span>
+        </div>
+      )}
+      {!publishing && status.phase === "changes" && (
+        <div className="target-publication-result">
+          <strong>{status.headline}</strong>
+          <span>
+            {status.detail}{" "}
+            {target.scheduleMode === "manual"
+              ? "Publish when you are ready."
+              : target.scheduleMode === "on_change"
+                ? "It will publish automatically after changes settle."
+                : "It will publish at the next scheduled run."}
+          </span>
+        </div>
       )}
     </article>
   );
