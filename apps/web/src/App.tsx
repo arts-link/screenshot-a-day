@@ -1974,8 +1974,18 @@ function PublicGallery() {
         <div className="public-actions">
           {activeProfile && (
             <>
-              <a href={`/${mode}/${value}/${activeProfile.id}/latest.gif`}>Latest GIF</a>
-              <a href={`/${mode}/${value}/${activeProfile.id}/latest.webm`}>Latest WebM</a>
+              <a
+                className="button button-secondary button-sm"
+                href={`/${mode}/${value}/${activeProfile.id}/latest.gif`}
+              >
+                Latest GIF ↓
+              </a>
+              <a
+                className="button button-secondary button-sm"
+                href={`/${mode}/${value}/${activeProfile.id}/latest.webm`}
+              >
+                Latest WebM ↓
+              </a>
             </>
           )}
         </div>
