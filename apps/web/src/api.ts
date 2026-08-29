@@ -88,6 +88,17 @@ export interface PublicGallery {
   successfulCount: number;
   failedCount: number;
   captures: CaptureRecord[];
+  exports: ExportArtifact[];
+}
+export interface ExportArtifact {
+  format: "gif" | "webm";
+  status: "unavailable" | "queued" | "processing" | "succeeded" | "failed";
+  available: boolean;
+  frameCount: number;
+  requestedFrameCount: number;
+  updatedAt: string | null;
+  error: string | null;
+  downloadUrl: string | null;
 }
 export interface CapturePage {
   captures: CaptureRecord[];
@@ -234,8 +245,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ firstId, secondId }),
     }),
+  exports: (projectId: string, profileId: string) =>
+    request<ExportArtifact[]>(`/api/v1/projects/${projectId}/profiles/${profileId}/exports`),
   createExport: (projectId: string, profileId: string, format: "gif" | "webm") =>
-    request(`/api/v1/projects/${projectId}/profiles/${profileId}/exports`, {
+    request<{ jobId: string }>(`/api/v1/projects/${projectId}/profiles/${profileId}/exports`, {
       method: "POST",
       body: JSON.stringify({ format }),
     }),

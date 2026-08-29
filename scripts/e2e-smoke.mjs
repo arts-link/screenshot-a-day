@@ -111,7 +111,7 @@ async function seedCapture(projectId, profileId, index, status = "succeeded") {
   const imageKey = `e2e/${job.id}.png`;
   const thumbnailKey = `e2e/${job.id}.webp`;
   await Promise.all([blobs.put(imageKey, image), blobs.put(thumbnailKey, thumbnail)]);
-  db.recordCapture(job, {
+  return db.recordCapture(job, {
     status,
     captured_at: new Date(Date.UTC(2026, 0, 1, 0, index)).toISOString(),
     final_url: "http://localhost:9999",
@@ -128,12 +128,34 @@ async function seedCapture(projectId, profileId, index, status = "succeeded") {
   });
 }
 
+async function seedExport(projectId, profileId, format, captureIds) {
+  const jobId = db.enqueueExport(projectId, profileId, format, {
+    format,
+    captureIds,
+    frameDurationMs: 750,
+    canvasWidth: 1280,
+    canvasHeight: 720,
+    timestampOverlay: true,
+    background: "#111827",
+    frameLimit: 90,
+  });
+  const job = db.claimJob();
+  assert.equal(job?.id, jobId);
+  const key = `e2e/latest.${format}`;
+  await blobs.put(key, Buffer.from(`e2e-${format}`));
+  db.saveExport(job, key, captureIds.length);
+}
+
 let browser;
 try {
   const indexable = await createProject("E2E indexable", "e2e-indexable", "indexable");
   const profileId = indexable.profiles[0].id;
-  for (let index = 0; index < 13; index++) await seedCapture(indexable.id, profileId, index);
+  const captureIds = [];
+  for (let index = 0; index < 13; index++)
+    captureIds.push((await seedCapture(indexable.id, profileId, index)).id);
   await seedCapture(indexable.id, profileId, 20, "failed");
+  for (const format of ["gif", "webm"])
+    await seedExport(indexable.id, profileId, format, captureIds);
   await app.inject({
     method: "POST",
     url: `/api/v1/projects/${indexable.id}/profiles`,
@@ -171,6 +193,8 @@ try {
   assert.equal(await page.locator(".capture-card").count(), 12);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /13 comparable captures/i);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /1 failed attempt/i);
+  await page.getByRole("button", { name: "Regenerate GIF" }).waitFor();
+  await page.getByRole("link", { name: "Download GIF" }).waitFor();
   await page.locator(".capture-card button").nth(1).click();
   await page.locator(".capture-card button").nth(0).click();
   await page.locator(".comparison-result").waitFor();
@@ -229,6 +253,7 @@ try {
 
   await page.goto(`${baseUrl}/s/${unlisted.shareToken}`);
   await page.getByRole("heading", { name: "E2E unlisted" }).waitFor();
+  await page.getByRole("button", { name: "GIF unavailable" }).waitFor();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/projects/${indexable.id}/compare`);

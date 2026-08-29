@@ -790,6 +790,12 @@ describe("control plane", () => {
     expect(
       document.paths["/api/v1/projects/{id}/webhooks/{webhookId}/rotate-secret"]!.post!.responses,
     ).toHaveProperty("200");
+    expect(
+      document.paths["/api/v1/projects/{id}/profiles/{profileId}/exports"]!.get!.responses,
+    ).toHaveProperty("200");
+    expect(
+      document.paths["/api/v1/projects/{id}/profiles/{profileId}/exports/{format}"]!.get!.responses,
+    ).toHaveProperty("200");
     expect(document.paths["/api/v1/projects/{id}/captures"]!.get!.responses["200"]!.headers)
       .toMatchInlineSnapshot(`
         {
@@ -906,6 +912,105 @@ describe("control plane", () => {
       frame_count: 2,
       status: "succeeded",
     });
+  });
+
+  it("reports export progress and serves completed animations as downloads", async () => {
+    const project = (await createFixtureProject("export-progress")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const profileId = project.profiles[0]!.id;
+    const cookie = `sad_session=${sessionToken}`;
+    await seedCapture(project.id, profileId, "succeeded", "2026-01-01T00:00:00.000Z");
+    await seedCapture(project.id, profileId, "succeeded", "2026-01-02T00:00:00.000Z");
+    await app.inject({
+      method: "PATCH",
+      url: `/api/v1/projects/${project.id}/publication`,
+      headers: { cookie },
+      payload: { publishMode: "indexable" },
+    });
+
+    const statusUrl = `/api/v1/projects/${project.id}/profiles/${profileId}/exports`;
+    expect((await app.inject({ url: statusUrl, headers: { cookie } })).json()).toMatchObject([
+      { format: "gif", status: "unavailable", available: false, downloadUrl: null },
+      { format: "webm", status: "unavailable", available: false, downloadUrl: null },
+    ]);
+
+    const queued = await app.inject({
+      method: "POST",
+      url: statusUrl,
+      headers: { cookie },
+      payload: { format: "gif" },
+    });
+    expect(queued.statusCode, queued.body).toBe(202);
+    expect(
+      (await app.inject({ url: statusUrl, headers: { cookie } })).json<unknown[]>()[0],
+    ).toMatchObject({
+      format: "gif",
+      status: "queued",
+      available: false,
+      requestedFrameCount: 2,
+    });
+    const publicQueued = await app.inject({ url: "/api/public/p/export-progress" });
+    expect(publicQueued.json<{ exports: unknown[] }>().exports[0]).toMatchObject({
+      format: "gif",
+      status: "queued",
+      available: false,
+      error: null,
+    });
+
+    const gifJob = db.claimJob()!;
+    expect(gifJob.id).toBe(queued.json<{ jobId: string }>().jobId);
+    expect(
+      (await app.inject({ url: statusUrl, headers: { cookie } })).json<unknown[]>()[0],
+    ).toMatchObject({ format: "gif", status: "processing", requestedFrameCount: 2 });
+    const gif = Buffer.from("generated-gif");
+    await blobs.put("exports/progress.gif", gif);
+    db.saveExport(gifJob, "exports/progress.gif", 2);
+    const ready = await app.inject({ url: statusUrl, headers: { cookie } });
+    expect(ready.json<unknown[]>()[0]).toMatchObject({
+      format: "gif",
+      status: "succeeded",
+      available: true,
+      frameCount: 2,
+      downloadUrl: `/api/v1/projects/${project.id}/profiles/${profileId}/exports/gif`,
+    });
+
+    for (const url of [
+      `/api/v1/projects/${project.id}/profiles/${profileId}/exports/gif`,
+      `/p/export-progress/${profileId}/latest.gif`,
+    ]) {
+      const response = await app.inject({
+        url,
+        ...(url.startsWith("/api/") ? { headers: { cookie } } : {}),
+      });
+      expect(response.statusCode, response.body).toBe(200);
+      expect(response.headers["content-disposition"]).toBe(
+        'attachment; filename="export-progress-latest.gif"',
+      );
+      expect(response.rawPayload).toEqual(gif);
+    }
+
+    const failed = await app.inject({
+      method: "POST",
+      url: statusUrl,
+      headers: { cookie },
+      payload: { format: "webm" },
+    });
+    db.raw
+      .prepare("UPDATE jobs SET max_attempts=1 WHERE id=?")
+      .run(failed.json<{ jobId: string }>().jobId);
+    const webmJob = db.claimJob()!;
+    expect(db.retryJob(webmJob, "ffmpeg diagnostic failure")).toBe(false);
+    expect((await app.inject({ url: statusUrl, headers: { cookie } })).json()).toMatchObject([
+      { format: "gif", status: "succeeded", available: true },
+      {
+        format: "webm",
+        status: "failed",
+        available: false,
+        error: "ffmpeg diagnostic failure",
+      },
+    ]);
   });
 
   it("deletes profile and project artifacts through the durable cleanup queue", async () => {
