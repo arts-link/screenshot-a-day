@@ -2172,14 +2172,6 @@ function Settings() {
             Read backup guide →
           </a>
         </Card>
-        <Card>
-          <AccentRule />
-          <h2>Secrets</h2>
-          <p>
-            Target headers and cookies are encrypted with the installation key and redacted from
-            logs and responses.
-          </p>
-        </Card>
       </div>
     </>
   );

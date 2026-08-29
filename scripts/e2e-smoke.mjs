@@ -195,6 +195,8 @@ try {
 
   await page.goto(`${baseUrl}/settings`);
   await page.getByRole("heading", { name: "API access" }).waitFor();
+  await page.getByRole("heading", { name: "Storage" }).waitFor();
+  assert.equal(await page.getByRole("heading", { name: "Secrets" }).count(), 0);
   await page.getByLabel("Token name").fill("E2E release token");
   await page.getByRole("button", { name: "Create token" }).click();
   await page.getByText("New token ready").waitFor();
