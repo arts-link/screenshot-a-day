@@ -18,6 +18,8 @@ import {
   publicationJobInFlight,
   publicationTargetActionLabel,
   publicationTargetStatus,
+  publicationVerificationStatus,
+  type PublicationVerificationFeedback,
 } from "./publication-status";
 
 const PUBLICATION_PHASES = ["queued", "building", "deploying"] as const;
@@ -51,15 +53,27 @@ function TargetCard({
 }) {
   const [action, setAction] = useState<"verify" | "publish">();
   const [publishStartedAt, setPublishStartedAt] = useState<number>();
+  const [verificationFeedback, setVerificationFeedback] =
+    useState<PublicationVerificationFeedback>();
   const run = async (name: typeof action, work: () => Promise<unknown>) => {
     setAction(name);
     if (name === "publish") setPublishStartedAt(Date.now());
+    if (name === "verify") setVerificationFeedback(undefined);
     onError(undefined);
     try {
       await work();
       await onChanged();
+      if (name === "verify")
+        setVerificationFeedback({ ok: true, checkedAt: new Date().toISOString() });
     } catch (error) {
-      onError(error);
+      if (name === "verify") {
+        setVerificationFeedback({
+          ok: false,
+          checkedAt: new Date().toISOString(),
+          message: error instanceof Error ? error.message : "Connection verification failed",
+        });
+        await onChanged().catch(() => undefined);
+      } else onError(error);
     } finally {
       setAction(undefined);
     }
@@ -67,6 +81,11 @@ function TargetCard({
   const status = publicationTargetStatus(target);
   const publishing = action === "publish" || status.busy;
   const busy = Boolean(action || status.busy);
+  const verification = publicationVerificationStatus(
+    target,
+    action === "verify",
+    verificationFeedback,
+  );
   const elapsed = usePublicationElapsed(
     target.latestJob && publicationJobInFlight(target.latestJob)
       ? target.latestJob.createdAt
@@ -99,9 +118,6 @@ function TargetCard({
             Last published {new Date(target.latestJob.updatedAt).toLocaleString()}
           </span>
         )}
-        {target.lastVerificationError && (
-          <span className="warning-copy">Connection needs attention</span>
-        )}
       </div>
       <div className="target-card-actions">
         <Button
@@ -111,7 +127,11 @@ function TargetCard({
           onClick={() => void run("verify", () => api.verifyPublicationTarget(target.id))}
         >
           {action === "verify" && <Spinner />}
-          Verify
+          {action === "verify"
+            ? "Checking…"
+            : target.lastVerifiedAt
+              ? "Verify again"
+              : "Verify connection"}
         </Button>
         <Button
           variant="secondary"
@@ -126,10 +146,31 @@ function TargetCard({
           Edit
         </Button>
       </div>
-      {action === "verify" && (
-        <span className="target-action-status" role="status" aria-live="polite">
-          Checking destination connection…
-        </span>
+      {verification && (
+        <div
+          className={`target-verification-result ${verification.phase}`}
+          role={verification.phase === "failed" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span className="target-verification-mark" aria-hidden="true">
+            {verification.phase === "checking" ? (
+              <Spinner />
+            ) : verification.phase === "verified" ? (
+              "✓"
+            ) : (
+              "!"
+            )}
+          </span>
+          <span>
+            <strong>{verification.headline}</strong>
+            <small>
+              {verification.detail}
+              {verification.checkedAt
+                ? ` Checked ${new Date(verification.checkedAt).toLocaleString()}.`
+                : " This result will remain here when the check finishes."}
+            </small>
+          </span>
+        </div>
       )}
       {publishing && (
         <div className="target-publication-progress" role="status" aria-live="polite">

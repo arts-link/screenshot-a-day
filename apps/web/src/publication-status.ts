@@ -21,13 +21,75 @@ export interface PublicationTargetStatus {
   detail: string;
 }
 
+export interface PublicationVerificationFeedback {
+  ok: boolean;
+  checkedAt: string;
+  message?: string;
+}
+
+export interface PublicationVerificationStatus {
+  phase: "checking" | "verified" | "failed";
+  headline: string;
+  detail: string;
+  checkedAt: string | null;
+}
+
+function publicationAdapterLabel(adapter: PublicationTarget["adapter"]): string {
+  return adapter === "sftp" ? "SFTP" : `${adapter.charAt(0).toUpperCase()}${adapter.slice(1)}`;
+}
+
+export function publicationVerificationStatus(
+  target: PublicationTarget,
+  checking: boolean,
+  feedback?: PublicationVerificationFeedback,
+): PublicationVerificationStatus | undefined {
+  const destination = publicationAdapterLabel(target.adapter);
+  if (checking) {
+    return {
+      phase: "checking",
+      headline: "Checking connection",
+      detail: `Testing the saved credentials against ${destination}.`,
+      checkedAt: null,
+    };
+  }
+  if (feedback) {
+    return feedback.ok
+      ? {
+          phase: "verified",
+          headline: "Connection verified",
+          detail: `${destination} accepted the saved credentials.`,
+          checkedAt: feedback.checkedAt,
+        }
+      : {
+          phase: "failed",
+          headline: "Connection could not be verified",
+          detail: feedback.message ?? `${destination} rejected the connection check.`,
+          checkedAt: feedback.checkedAt,
+        };
+  }
+  if (target.lastVerificationError) {
+    return {
+      phase: "failed",
+      headline: "Connection needs attention",
+      detail: target.lastVerificationError,
+      checkedAt: null,
+    };
+  }
+  if (target.lastVerifiedAt) {
+    return {
+      phase: "verified",
+      headline: "Connection verified",
+      detail: `${destination} accepted the saved credentials.`,
+      checkedAt: target.lastVerifiedAt,
+    };
+  }
+  return undefined;
+}
+
 export function publicationTargetStatus(target: PublicationTarget): PublicationTargetStatus {
   const job = target.latestJob;
   if (job && IN_FLIGHT.has(job.status)) {
-    const destination =
-      target.adapter === "sftp"
-        ? "SFTP"
-        : `${target.adapter.charAt(0).toUpperCase()}${target.adapter.slice(1)}`;
+    const destination = publicationAdapterLabel(target.adapter);
     const status = {
       queued: {
         headline: "Publication queued",

@@ -18,7 +18,7 @@ All notable changes to Screenshot-a-Day are documented here. The project follows
 - Capture queries filter status before pagination and expose exact successful/failed totals.
 - Webhooks can be paused, edited, tested, rotated, inspected, and deleted from Configuration.
 - Comparisons now enforce successful same-profile inputs, bounded resources, rate limits, and short-lived caching.
-- Static publication targets now use clear unpublished-state copy and show live queued, building, and deploying progress with elapsed time.
+- Static publication targets now use clear unpublished-state copy, persistent connection-verification results, and live queued, building, and deploying progress with elapsed time.
 
 ### Database
 
