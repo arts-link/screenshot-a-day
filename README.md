@@ -1,8 +1,13 @@
 # Screenshot-a-Day
 
+[![CI](https://github.com/arts-link/screenshot-a-day/actions/workflows/ci.yml/badge.svg)](https://github.com/arts-link/screenshot-a-day/actions/workflows/ci.yml)
+[![GitHub release](https://img.shields.io/github/v/release/arts-link/screenshot-a-day?display_name=tag&sort=semver)](https://github.com/arts-link/screenshot-a-day/releases)
+[![License: AGPL-3.0-or-later](https://img.shields.io/github/license/arts-link/screenshot-a-day)](LICENSE)
+[![DCO 1.1](https://img.shields.io/badge/DCO-1.1-4c1)](CONTRIBUTING.md#developer-certificate-of-origin)
+
 Screenshot-a-Day is a self-hosted visual history for websites. It captures reproducible screenshots on a schedule, compares changes, publishes galleries and GIF/WebM timelines, and can notify other tools through signed webhooks.
 
-[Project website](https://arts-link.github.io/screenshot-a-day/) · [Source and releases](https://github.com/arts-link/screenshot-a-day) · [Security reporting](SECURITY.md)
+[Website and documentation](https://arts-link.github.io/screenshot-a-day/) · [Source and releases](https://github.com/arts-link/screenshot-a-day) · [Security reporting](SECURITY.md)
 
 Version 0.1.0 is the initial open-source release. The public demo at `https://screenshots.arts-link.com/` will be linked when the released deployment passes its launch checks. Follow the [release checklist](docs/plans/release-v0.1.0.md), read the [v0.1.0 release notes](docs/releases/v0.1.0.md), or review the [architecture decisions](docs/adr/README.md).
 
