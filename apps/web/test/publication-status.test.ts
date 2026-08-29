@@ -6,6 +6,7 @@ import {
   publicationStatus,
   publicationTargetActionLabel,
   publicationTargetStatus,
+  publicationVerificationStatus,
 } from "../src/publication-status";
 
 function fixture(overrides: Partial<StaticPublication> = {}): StaticPublication {
@@ -172,5 +173,42 @@ describe("publication target status", () => {
     expect(formatPublicationElapsed(5)).toBe("5s elapsed");
     expect(formatPublicationElapsed(125)).toBe("2m 5s elapsed");
     expect(formatPublicationElapsed(3_725)).toBe("1h 2m elapsed");
+  });
+});
+
+describe("publication target verification", () => {
+  it("keeps a successful verification readable with its checked time", () => {
+    expect(
+      publicationVerificationStatus(targetFixture(), false, {
+        ok: true,
+        checkedAt: "2026-08-29T08:00:00.000Z",
+      }),
+    ).toEqual({
+      phase: "verified",
+      headline: "Connection verified",
+      detail: "Vercel accepted the saved credentials.",
+      checkedAt: "2026-08-29T08:00:00.000Z",
+    });
+  });
+
+  it("shows an explicit in-progress state until verification finishes", () => {
+    expect(publicationVerificationStatus(targetFixture(), true)).toMatchObject({
+      phase: "checking",
+      headline: "Checking connection",
+    });
+  });
+
+  it("keeps failure detail available for the next action", () => {
+    expect(
+      publicationVerificationStatus(targetFixture(), false, {
+        ok: false,
+        checkedAt: "2026-08-29T08:00:00.000Z",
+        message: "Invalid access token",
+      }),
+    ).toMatchObject({
+      phase: "failed",
+      headline: "Connection could not be verified",
+      detail: "Invalid access token",
+    });
   });
 });
