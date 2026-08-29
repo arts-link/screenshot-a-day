@@ -213,6 +213,7 @@ try {
   assert.equal(await page.locator(".capture-card").count(), 12);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /13 comparable captures/i);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /1 failed attempt/i);
+  await page.getByText("Generate / update", { exact: true }).click();
   await page.getByRole("button", { name: "Regenerate GIF" }).waitFor();
   await page.getByRole("link", { name: "Download GIF" }).waitFor();
   await page.locator(".capture-card button").nth(1).click();

@@ -641,58 +641,83 @@ function ExportControls({
     },
     onError: setError,
   });
+  const formats = (["gif", "webm"] as const).map((format) => ({
+    format,
+    item: exportsQuery.data?.find((candidate) => candidate.format === format),
+  }));
+  const available = formats.filter(({ item }) => item?.available && item.downloadUrl);
+  const active = formats.filter(
+    ({ item }) => item?.status === "queued" || item?.status === "processing",
+  );
   return (
     <div className="export-panel">
-      <div className="export-actions">
-        {(["gif", "webm"] as const).map((format) => {
-          const item = exportsQuery.data?.find((candidate) => candidate.format === format);
-          const pending = generation.isPending && generation.variables === format;
-          const busy = pending || item?.status === "queued" || item?.status === "processing";
-          const name = format.toUpperCase();
-          const action = busy
-            ? item?.status === "processing"
-              ? `Building ${name}…`
-              : `Queueing ${name}…`
-            : item?.status === "failed"
-              ? `Retry ${name}`
-              : item?.available
-                ? `Regenerate ${name}`
-                : `Generate ${name}`;
-          return (
-            <div className="export-control" key={format}>
-              <div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={busy || exportsQuery.isLoading || captureCount < 2}
-                  aria-busy={busy}
-                  onClick={() => {
-                    setError(undefined);
-                    generation.mutate(format);
-                  }}
-                >
-                  {busy && <Spinner />}
-                  {action}
-                </Button>
-                {item?.available && item.downloadUrl && (
-                  <a className="button button-secondary button-sm" href={item.downloadUrl} download>
-                    Download {name} ↓
-                  </a>
-                )}
-              </div>
-              <small role="status" aria-live="polite">
-                {captureCount < 2
-                  ? "Needs at least two successful captures"
-                  : exportStatusText(item, busy)}
-              </small>
-            </div>
-          );
-        })}
+      <div className="export-downloads">
+        <span>Animations</span>
+        {available.length ? (
+          available.map(({ format, item }) => (
+            <a
+              className="button button-secondary button-sm"
+              href={item!.downloadUrl!}
+              download
+              key={format}
+              aria-label={`Download ${format.toUpperCase()}`}
+            >
+              {format.toUpperCase()} ↓
+            </a>
+          ))
+        ) : (
+          <small>No downloads yet</small>
+        )}
       </div>
-      <p className="export-help">
-        Generated on the server worker with FFmpeg from up to 90 captures. Large histories can take
-        tens of seconds; it is safe to leave this page while they run.
-      </p>
+      <details className="export-generation">
+        <summary>
+          {active.length
+            ? `Generating ${active.map(({ format }) => format.toUpperCase()).join(" + ")}…`
+            : "Generate / update"}
+        </summary>
+        <div className="export-generation-body">
+          <p className="export-help">
+            Uses FFmpeg on the worker and up to 90 captures. Large histories may take tens of
+            seconds; you can leave this page while they run.
+          </p>
+          <div className="export-actions">
+            {formats.map(({ format, item }) => {
+              const pending = generation.isPending && generation.variables === format;
+              const busy = pending || item?.status === "queued" || item?.status === "processing";
+              const name = format.toUpperCase();
+              const action = busy
+                ? item?.status === "processing"
+                  ? `Building ${name}…`
+                  : `Queueing ${name}…`
+                : item?.status === "failed"
+                  ? `Retry ${name}`
+                  : item?.available
+                    ? `Regenerate ${name}`
+                    : `Generate ${name}`;
+              return (
+                <div className="export-control" key={format}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={busy || exportsQuery.isLoading || captureCount < 2}
+                    aria-busy={busy}
+                    onClick={() => {
+                      setError(undefined);
+                      generation.mutate(format);
+                    }}
+                  >
+                    {busy && <Spinner />}
+                    {action}
+                  </Button>
+                  <small role="status" aria-live="polite">
+                    {captureCount < 2 ? "Needs two captures" : exportStatusText(item, busy)}
+                  </small>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </details>
       <ErrorNotice error={error ?? exportsQuery.error} />
       {exportsQuery.data?.map((item) =>
         item.status === "failed" && item.error ? (
@@ -2116,31 +2141,42 @@ function PublicGallery() {
                       className="button button-secondary button-sm"
                       href={item.downloadUrl}
                       download
+                      aria-label={`Download latest ${name}`}
                     >
-                      Download latest {name} ↓
+                      {name} ↓
                     </a>
                   ) : (
-                    <button className="button button-secondary button-sm" disabled>
-                      {busy ? `Preparing ${name}…` : `${name} unavailable`}
+                    <button
+                      className="button button-secondary button-sm"
+                      disabled
+                      aria-label={busy ? `Preparing ${name}` : `${name} unavailable`}
+                    >
+                      {name} {busy ? "…" : "—"}
                     </button>
                   )}
-                  <small role="status" aria-live="polite">
-                    {busy
-                      ? item.available
-                        ? "A newer version is being generated"
-                        : `${item.requestedFrameCount} frames · generating on server`
-                      : item.available
-                        ? `${item.frameCount} frames${item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleString()}` : ""}`
-                        : "The project owner has not generated this yet"}
-                  </small>
                 </div>
               );
             })}
           </div>
-          <p className="public-export-help">
-            These download the latest completed server-generated animations; they are not built in
-            your browser.
-          </p>
+          <details className="public-export-details">
+            <summary>Animation details</summary>
+            <div>
+              {gallery.data.exports.map((item) => {
+                const busy = item.status === "queued" || item.status === "processing";
+                return (
+                  <span key={item.format} role="status" aria-live="polite">
+                    <strong>{item.format.toUpperCase()}</strong>
+                    {busy
+                      ? ` · ${item.requestedFrameCount} frames · generating`
+                      : item.available
+                        ? ` · ${item.frameCount} frames${item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleString()}` : ""}`
+                        : " · not generated"}
+                  </span>
+                );
+              })}
+              <p>Server-generated downloads; nothing is encoded in your browser.</p>
+            </div>
+          </details>
         </div>
       </div>
       <section className="public-comparison-workspace">
