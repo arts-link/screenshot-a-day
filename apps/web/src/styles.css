@@ -1524,8 +1524,7 @@ input[type="range"] {
   border: 0;
 }
 
-.settings-grid > .publication-settings-card,
-.settings-grid > .card:last-child {
+.settings-grid > .publication-settings-card {
   grid-column: 1 / -1;
 }
 
