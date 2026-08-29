@@ -185,8 +185,8 @@ describe("publication target verification", () => {
       }),
     ).toEqual({
       phase: "verified",
-      headline: "Connection verified",
-      detail: "Vercel accepted the saved credentials.",
+      headline: "Destination verified",
+      detail: "Vercel accepted the saved credentials and the published URL responded successfully.",
       checkedAt: "2026-08-29T08:00:00.000Z",
     });
   });
@@ -194,7 +194,8 @@ describe("publication target verification", () => {
   it("shows an explicit in-progress state until verification finishes", () => {
     expect(publicationVerificationStatus(targetFixture(), true)).toMatchObject({
       phase: "checking",
-      headline: "Checking connection",
+      headline: "Checking destination",
+      detail: "Testing the saved credentials and opening https://history.example.com.",
     });
   });
 
@@ -207,7 +208,7 @@ describe("publication target verification", () => {
       }),
     ).toMatchObject({
       phase: "failed",
-      headline: "Connection could not be verified",
+      headline: "Destination could not be verified",
       detail: "Invalid access token",
     });
   });
