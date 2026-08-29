@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hashPassword, SetupManager, verifyPassword } from "../src/auth.js";
+import { hashPassword, parseBearerToken, SetupManager, verifyPassword } from "../src/auth.js";
 
 afterEach(() => vi.useRealTimers());
 
@@ -23,5 +23,14 @@ describe("administrator authentication", () => {
     expect(hash).toMatch(/^\$argon2id\$/);
     await expect(verifyPassword(hash, "a sufficiently long password")).resolves.toBe(true);
     await expect(verifyPassword(hash, "wrong password")).resolves.toBe(false);
+  });
+
+  it("parses bearer credentials without a backtracking regular expression", () => {
+    expect(parseBearerToken("Bearer token-value")).toBe("token-value");
+    expect(parseBearerToken("bEaReR\t\ttoken-value")).toBe("token-value");
+    expect(parseBearerToken("Basic token-value")).toBeNull();
+    expect(parseBearerToken("Bearer")).toBeNull();
+    expect(parseBearerToken("Bearer token value")).toBeNull();
+    expect(parseBearerToken(`Bearer ${" ".repeat(8192)}x`)).toBeNull();
   });
 });
