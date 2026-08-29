@@ -438,15 +438,52 @@ h3 {
 
 .project-card {
   min-width: 0;
-  padding: 40px;
   color: inherit;
   background: var(--surface-page);
-  text-decoration: none;
   transition: background-color var(--dur-mid) var(--ease-brand);
 }
 
 .project-card:hover {
   background: var(--surface-raised);
+}
+
+.project-card-main {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+.project-card-preview {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-well);
+}
+
+.project-card-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: top;
+  transition: transform var(--dur-mid) var(--ease-brand);
+}
+
+.project-card:hover .project-card-preview img {
+  transform: scale(1.015);
+}
+
+.project-card-preview.empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.project-card-body {
+  padding: 40px 40px 28px;
 }
 
 .project-top {
@@ -464,7 +501,7 @@ h3 {
   font-size: 36px;
 }
 
-.project-card > p {
+.project-card-body > p {
   margin-bottom: 40px;
   overflow: hidden;
   color: var(--text-muted);
@@ -482,6 +519,28 @@ h3 {
   font-size: 12px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+}
+
+.project-card-actions {
+  padding: 20px 40px 28px;
+  border-top: 1px solid var(--border-hairline);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+}
+
+.project-card-actions a {
+  color: var(--text-body);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.project-card-actions .project-gallery-link {
+  color: var(--text-accent);
 }
 
 .card {
@@ -2269,11 +2328,18 @@ input[type="range"] {
     text-align: center;
   }
 
-  .project-card,
   .modal,
   .confirm-dialog,
   .compare-panel {
     padding: 28px;
+  }
+
+  .project-card-body {
+    padding: 28px 28px 20px;
+  }
+
+  .project-card-actions {
+    padding: 18px 28px 24px;
   }
 
   .segmented {

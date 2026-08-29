@@ -472,15 +472,26 @@ export class AppDatabase {
   listProjects(): ProjectSummary[] {
     return this.raw
       .prepare(
-        `SELECT p.*, count(DISTINCT pr.id) profile_count, max(c.captured_at) latest_capture_at
-      FROM projects p LEFT JOIN profiles pr ON pr.project_id=p.id LEFT JOIN captures c ON c.project_id=p.id AND c.status='succeeded'
-      GROUP BY p.id ORDER BY p.created_at DESC`,
+        `SELECT p.*, count(DISTINCT pr.id) profile_count,
+          latest.id latest_capture_id,
+          latest.captured_at latest_capture_at,
+          latest.thumbnail_key latest_thumbnail_key
+        FROM projects p
+        LEFT JOIN profiles pr ON pr.project_id=p.id
+        LEFT JOIN captures latest ON latest.id=(
+          SELECT candidate.id FROM captures candidate
+          WHERE candidate.project_id=p.id AND candidate.status='succeeded'
+          ORDER BY candidate.captured_at DESC, candidate.id DESC LIMIT 1
+        )
+        GROUP BY p.id ORDER BY p.created_at DESC`,
       )
       .all()
       .map((value) => {
         const row = value as ProjectRow & {
           profile_count: number;
+          latest_capture_id: string | null;
           latest_capture_at: string | null;
+          latest_thumbnail_key: string | null;
         };
         return {
           id: row.id,
@@ -494,6 +505,10 @@ export class AppDatabase {
           scheduleTimezone: row.schedule_timezone,
           profileCount: row.profile_count,
           latestCaptureAt: row.latest_capture_at,
+          latestThumbnailUrl:
+            row.latest_capture_id && row.latest_thumbnail_key
+              ? `/api/v1/captures/${row.latest_capture_id}/thumbnail`
+              : null,
           createdAt: row.created_at,
         };
       });

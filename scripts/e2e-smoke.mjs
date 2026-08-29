@@ -184,6 +184,26 @@ try {
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
+  await page.goto(baseUrl);
+  await page.getByRole("heading", { name: "Your projects" }).waitFor();
+  const indexableCard = page.locator(".project-card").filter({ hasText: indexable.name });
+  assert.equal(
+    await indexableCard
+      .getByRole("img", { name: `Latest capture of ${indexable.name}` })
+      .getAttribute("src"),
+    `/api/v1/captures/${captureIds.at(-1)}/thumbnail`,
+  );
+  assert.equal(
+    await indexableCard.getByRole("link", { name: "Open gallery" }).getAttribute("href"),
+    `${baseUrl}/p/e2e-indexable`,
+  );
+  const unlistedCard = page.locator(".project-card").filter({ hasText: unlisted.name });
+  assert.equal(
+    await unlistedCard.getByRole("link", { name: "Open gallery" }).getAttribute("href"),
+    `${baseUrl}/s/${unlisted.shareToken}`,
+  );
+  assert.equal(await page.locator(".project-card a a").count(), 0);
+
   await page.goto(`${baseUrl}/projects/${indexable.id}/compare`);
   await page.getByRole("heading", { name: "Compare two captures" }).waitFor();
   assert.equal(
@@ -259,6 +279,13 @@ try {
   await page.getByRole("button", { name: "GIF unavailable" }).waitFor();
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(baseUrl);
+  await page.getByRole("heading", { name: "Your projects" }).waitFor();
+  await page
+    .locator(".project-card")
+    .filter({ hasText: indexable.name })
+    .getByRole("link", { name: "Open gallery" })
+    .waitFor();
   await page.goto(`${baseUrl}/projects/${indexable.id}/compare`);
   await page.getByRole("heading", { name: "Compare two captures" }).waitFor();
   await page.goto(`${baseUrl}/p/e2e-indexable`);
