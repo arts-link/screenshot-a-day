@@ -241,6 +241,9 @@ try {
 
   await page.goto(`${baseUrl}/p/e2e-indexable`);
   await page.getByRole("heading", { name: "E2E indexable" }).waitFor();
+  await page
+    .getByText("13 comparable moments in this view. 2 capture profiles available.")
+    .waitFor();
   for (const label of ["Latest GIF", "Latest WebM"]) {
     const link = page.getByRole("link", { name: new RegExp(label, "i") });
     await link.waitFor();

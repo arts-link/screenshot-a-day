@@ -2053,9 +2053,9 @@ function PublicGallery() {
         <Eyebrow>Visual record</Eyebrow>
         <h1>{gallery.data.project.name}</h1>
         <p>
-          {gallery.data.successfulCount} comparable moments for this profile across{" "}
-          {gallery.data.project.profiles.length} profile
-          {gallery.data.project.profiles.length === 1 ? "" : "s"}.
+          {gallery.data.successfulCount} comparable moments in this view.{" "}
+          {gallery.data.project.profiles.length} capture profile
+          {gallery.data.project.profiles.length === 1 ? "" : "s"} available.
         </p>
       </header>
       <div className="public-tools">
