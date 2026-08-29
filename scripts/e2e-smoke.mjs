@@ -217,6 +217,11 @@ try {
 
   await page.goto(`${baseUrl}/p/e2e-indexable`);
   await page.getByRole("heading", { name: "E2E indexable" }).waitFor();
+  for (const label of ["Latest GIF", "Latest WebM"]) {
+    const link = page.getByRole("link", { name: new RegExp(label, "i") });
+    await link.waitFor();
+    assert.match((await link.getAttribute("class")) ?? "", /button-secondary/);
+  }
   assert.equal(await page.locator(".public-frame").count(), 12);
   await page.getByRole("button", { name: /Older/ }).click();
   await page.locator(".public-frame").first().waitFor();
