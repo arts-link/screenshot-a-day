@@ -47,8 +47,8 @@ export function publicationVerificationStatus(
   if (checking) {
     return {
       phase: "checking",
-      headline: "Checking connection",
-      detail: `Testing the saved credentials against ${destination}.`,
+      headline: "Checking destination",
+      detail: `Testing the saved credentials and opening ${target.baseUrl}.`,
       checkedAt: null,
     };
   }
@@ -56,13 +56,13 @@ export function publicationVerificationStatus(
     return feedback.ok
       ? {
           phase: "verified",
-          headline: "Connection verified",
-          detail: `${destination} accepted the saved credentials.`,
+          headline: "Destination verified",
+          detail: `${destination} accepted the saved credentials and the published URL responded successfully.`,
           checkedAt: feedback.checkedAt,
         }
       : {
           phase: "failed",
-          headline: "Connection could not be verified",
+          headline: "Destination could not be verified",
           detail: feedback.message ?? `${destination} rejected the connection check.`,
           checkedAt: feedback.checkedAt,
         };
@@ -70,7 +70,7 @@ export function publicationVerificationStatus(
   if (target.lastVerificationError) {
     return {
       phase: "failed",
-      headline: "Connection needs attention",
+      headline: "Destination needs attention",
       detail: target.lastVerificationError,
       checkedAt: null,
     };
@@ -78,8 +78,8 @@ export function publicationVerificationStatus(
   if (target.lastVerifiedAt) {
     return {
       phase: "verified",
-      headline: "Connection verified",
-      detail: `${destination} accepted the saved credentials.`,
+      headline: "Destination verified",
+      detail: `${destination} accepted the saved credentials and the published URL responded successfully.`,
       checkedAt: target.lastVerifiedAt,
     };
   }

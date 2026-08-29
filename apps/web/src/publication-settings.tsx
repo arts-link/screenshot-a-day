@@ -130,8 +130,8 @@ function TargetCard({
           {action === "verify"
             ? "Checking…"
             : target.lastVerifiedAt
-              ? "Verify again"
-              : "Verify connection"}
+              ? "Check again"
+              : "Verify destination"}
         </Button>
         <Button
           variant="secondary"

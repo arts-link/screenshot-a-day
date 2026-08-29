@@ -1131,25 +1131,36 @@ export class AppDatabase {
     const current = this.getPublicationTarget(id);
     if (!current) return undefined;
     const now = new Date().toISOString();
+    const baseUrl = input.baseUrl ?? current.base_url;
+    const adapter = input.adapter ?? current.adapter;
+    const adapterConfigJson =
+      input.adapterConfig === undefined
+        ? current.adapter_config_json
+        : JSON.stringify(input.adapterConfig);
+    const connectionChanged =
+      baseUrl !== current.base_url ||
+      adapter !== current.adapter ||
+      adapterConfigJson !== current.adapter_config_json;
     this.raw
       .prepare(
         `UPDATE publication_targets SET name=?,base_url=?,branding_json=?,schedule_mode=?,schedule_expression=?,
-        schedule_timezone=?,adapter=?,adapter_config_json=?,next_run_at=?,dirty_revision=dirty_revision+1,updated_at=? WHERE id=?`,
+        schedule_timezone=?,adapter=?,adapter_config_json=?,next_run_at=?,last_verified_at=?,last_verification_error=?,
+        dirty_revision=dirty_revision+1,updated_at=? WHERE id=?`,
       )
       .run(
         input.name ?? current.name,
-        input.baseUrl ?? current.base_url,
+        baseUrl,
         input.branding ? JSON.stringify(input.branding) : current.branding_json,
         input.scheduleMode ?? current.schedule_mode,
         input.scheduleExpression === undefined
           ? current.schedule_expression
           : input.scheduleExpression,
         input.scheduleTimezone ?? current.schedule_timezone,
-        input.adapter ?? current.adapter,
-        input.adapterConfig === undefined
-          ? current.adapter_config_json
-          : JSON.stringify(input.adapterConfig),
+        adapter,
+        adapterConfigJson,
         input.nextRunAt === undefined ? current.next_run_at : input.nextRunAt,
+        connectionChanged ? null : current.last_verified_at,
+        connectionChanged ? null : current.last_verification_error,
         now,
         id,
       );
