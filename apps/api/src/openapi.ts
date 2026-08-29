@@ -101,6 +101,32 @@ export const openApiSchemas = {
       diffDataUrl: { type: "string" },
     },
   },
+  Export: {
+    type: "object",
+    required: [
+      "format",
+      "status",
+      "available",
+      "frameCount",
+      "requestedFrameCount",
+      "updatedAt",
+      "error",
+      "downloadUrl",
+    ],
+    properties: {
+      format: { type: "string", enum: ["gif", "webm"] },
+      status: {
+        type: "string",
+        enum: ["unavailable", "queued", "processing", "succeeded", "failed"],
+      },
+      available: { type: "boolean" },
+      frameCount: { type: "integer", minimum: 0 },
+      requestedFrameCount: { type: "integer", minimum: 0 },
+      updatedAt: { anyOf: [{ type: "string", format: "date-time" }, { type: "null" }] },
+      error: nullableString,
+      downloadUrl: nullableString,
+    },
+  },
   PublicGallery: {
     type: "object",
     required: [
@@ -112,6 +138,7 @@ export const openApiSchemas = {
       "successfulCount",
       "failedCount",
       "captures",
+      "exports",
     ],
     properties: {
       project: { $ref: "#/components/schemas/Project" },
@@ -122,6 +149,7 @@ export const openApiSchemas = {
       successfulCount: { type: "integer", minimum: 0 },
       failedCount: { type: "integer", minimum: 0 },
       captures: { type: "array", items: { $ref: "#/components/schemas/Capture" } },
+      exports: { type: "array", items: { $ref: "#/components/schemas/Export" } },
     },
   },
 } as const;
@@ -299,6 +327,8 @@ function successSchema(url: string, method: string): object {
   if (url.endsWith("/deliveries"))
     return { type: "array", items: { $ref: "#/components/schemas/WebhookDelivery" } };
   if (url.endsWith("/comparisons")) return { $ref: "#/components/schemas/Comparison" };
+  if (url.endsWith("/exports") && method === "GET")
+    return { type: "array", items: { $ref: "#/components/schemas/Export" } };
   if (url === "/api/public/p/:slug" || url === "/api/public/s/:token")
     return { $ref: "#/components/schemas/PublicGallery" };
   if (
@@ -389,7 +419,10 @@ export function openApiTransform({
   };
   const isComparison = url.endsWith("/comparisons");
   const response =
-    url.endsWith("/image") || url.endsWith("/thumbnail") || url.includes("/latest.")
+    url.endsWith("/image") ||
+    url.endsWith("/thumbnail") ||
+    url.endsWith("/exports/:format") ||
+    url.includes("/latest.")
       ? { 200: { type: "string", format: "binary" }, 404: errorResponse }
       : {
           [successCode]: successCode === 204 ? { type: "null" } : successSchema(url, method),

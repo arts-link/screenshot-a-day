@@ -916,6 +916,15 @@ export class AppDatabase {
           "UPDATE jobs SET status='failed',error=?,lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE id=?",
         )
         .run(error, now.toISOString(), job.id);
+      if (job.type === "export" && job.profile_id) {
+        const format = (JSON.parse(job.payload_json) as { format: "gif" | "webm" }).format;
+        if (this.latestExportJob(job.profile_id, format)?.id === job.id)
+          this.raw
+            .prepare(
+              "UPDATE exports SET status='failed',updated_at=? WHERE profile_id=? AND format=?",
+            )
+            .run(now.toISOString(), job.profile_id, format);
+      }
       this.finishRun(job.run_id);
       return false;
     }
@@ -1034,6 +1043,15 @@ export class AppDatabase {
     return this.raw
       .prepare("SELECT * FROM exports WHERE profile_id=? AND format=?")
       .get(profileId, format) as ExportRow | undefined;
+  }
+  latestExportJob(profileId: string, format: "gif" | "webm"): JobRow | undefined {
+    return this.raw
+      .prepare(
+        `SELECT * FROM jobs
+        WHERE profile_id=? AND type='export' AND json_extract(payload_json, '$.format')=?
+        ORDER BY rowid DESC LIMIT 1`,
+      )
+      .get(profileId, format) as JobRow | undefined;
   }
 
   createPublicationTarget(

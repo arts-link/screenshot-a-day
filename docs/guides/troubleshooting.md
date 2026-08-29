@@ -20,6 +20,8 @@ Every enabled profile must have one successful test capture. Editing a profile c
 
 Confirm the worker image contains FFmpeg and that at least two successful frames exist. The last valid public artifact remains available while regeneration retries or fails.
 
+Generation runs asynchronously in the worker, not in the browser or during download. The Compare page reports queued, encoding, success, and failure state and can be left safely while work continues. Public gallery controls download only the latest completed file; an unavailable control means no successful artifact exists yet. Check worker logs when a job remains queued or reports an FFmpeg failure.
+
 ## Encryption errors after restore
 
 The restored `SAD_ENCRYPTION_KEY` does not match the data. Stop the API and recover the original key; repeatedly rewriting configuration cannot repair encrypted values.

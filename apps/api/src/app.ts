@@ -153,6 +153,38 @@ function captureDto(row: CaptureRow): CaptureRecord {
   };
 }
 
+function exportSummary(
+  db: AppDatabase,
+  profileId: string,
+  format: "gif" | "webm",
+  downloadUrl: string,
+  includeError = true,
+) {
+  const exported = db.getExport(profileId, format);
+  const job = db.latestExportJob(profileId, format);
+  const requestedFrameCount = job
+    ? ((JSON.parse(job.payload_json) as { captureIds?: string[] }).captureIds?.length ?? 0)
+    : (exported?.frame_count ?? 0);
+  const status =
+    job?.status === "leased"
+      ? "processing"
+      : job?.status === "queued" || job?.status === "failed"
+        ? job.status
+        : exported?.blob_key
+          ? "succeeded"
+          : "unavailable";
+  return {
+    format,
+    status,
+    available: Boolean(exported?.blob_key),
+    frameCount: exported?.frame_count ?? 0,
+    requestedFrameCount,
+    updatedAt: job?.updated_at ?? exported?.updated_at ?? null,
+    error: includeError && job?.status === "failed" ? job.error : null,
+    downloadUrl: exported?.blob_key ? downloadUrl : null,
+  };
+}
+
 function publicProject(project: ProjectRow, db: AppDatabase) {
   const profiles = db.listProfiles(project.id).map((profile) => ({
     id: profile.id,
@@ -1141,6 +1173,44 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     return db.listWebhookDeliveries(hook.id, limit).map(webhookDeliveryDto);
   });
 
+  app.get<{ Params: { id: string; profileId: string } }>(
+    "/api/v1/projects/:id/profiles/:profileId/exports",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "read", request.params.id)) return;
+      const profile = db.getProfile(request.params.profileId);
+      if (!profile || profile.project_id !== request.params.id)
+        return reply.code(404).send({ error: "Capture profile not found" });
+      return (["gif", "webm"] as const).map((format) =>
+        exportSummary(
+          db,
+          profile.id,
+          format,
+          `/api/v1/projects/${request.params.id}/profiles/${profile.id}/exports/${format}`,
+        ),
+      );
+    },
+  );
+
+  app.get<{ Params: { id: string; profileId: string; format: "gif" | "webm" } }>(
+    "/api/v1/projects/:id/profiles/:profileId/exports/:format",
+    async (request, reply) => {
+      if (!requireIdentity(db, request, reply, "read", request.params.id)) return;
+      const project = db.getProject(request.params.id);
+      const profile = db.getProfile(request.params.profileId);
+      const exported = db.getExport(request.params.profileId, request.params.format);
+      if (!project || !profile || profile.project_id !== project.id || !exported?.blob_key)
+        return reply.code(404).send({ error: "Export not found" });
+      return reply
+        .type(request.params.format === "gif" ? "image/gif" : "video/webm")
+        .header(
+          "content-disposition",
+          `attachment; filename="${project.slug}-latest.${request.params.format}"`,
+        )
+        .header("cache-control", "private, no-cache")
+        .send(await blobs.get(exported.blob_key));
+    },
+  );
+
   app.post<{ Params: { id: string; profileId: string } }>(
     "/api/v1/projects/:id/profiles/:profileId/exports",
     async (request, reply) => {
@@ -1484,6 +1554,15 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
           imageUrl: `/${kind === "slug" ? "p" : "s"}/${value}/captures/${capture.id}/image`,
           thumbnailUrl: `/${kind === "slug" ? "p" : "s"}/${value}/captures/${capture.id}/thumbnail`,
         })),
+      exports: (["gif", "webm"] as const).map((format) =>
+        exportSummary(
+          db,
+          profile.id,
+          format,
+          `/${kind === "slug" ? "p" : "s"}/${value}/${profile.id}/latest.${format}`,
+          false,
+        ),
+      ),
     };
   }
   app.get<{ Params: { slug: string }; Querystring: Record<string, unknown> }>(
@@ -1582,6 +1661,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     if (kind === "token") reply.header("x-robots-tag", "noindex, nofollow");
     return reply
       .type(format === "gif" ? "image/gif" : "video/webm")
+      .header("content-disposition", `attachment; filename="${project.slug}-latest.${format}"`)
       .header("cache-control", "public, max-age=300")
       .send(await blobs.get(exported.blob_key));
   }

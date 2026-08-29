@@ -13,7 +13,7 @@ import {
   useParams,
 } from "react-router-dom";
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
-import { api, type Comparison, type ProjectDetail, type Webhook } from "./api";
+import { api, type Comparison, type ExportArtifact, type ProjectDetail, type Webhook } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
 import { projectGalleryUrl } from "./gallery-url";
 import {
@@ -568,6 +568,110 @@ function AutomaticComparison({
   );
 }
 
+function exportStatusText(item: ExportArtifact | undefined, busy: boolean): string {
+  if (busy && item?.status === "processing")
+    return `Encoding ${item.requestedFrameCount} frames on the worker…`;
+  if (busy)
+    return `Queued${item?.requestedFrameCount ? ` · ${item.requestedFrameCount} frames` : ""}`;
+  if (item?.status === "failed")
+    return item.available ? "Update failed · previous export still available" : "Generation failed";
+  if (item?.available)
+    return `${item.frameCount} frames · ready${item.updatedAt ? ` ${new Date(item.updatedAt).toLocaleString()}` : ""}`;
+  return "Not generated yet";
+}
+
+function ExportControls({
+  projectId,
+  profileId,
+  captureCount,
+}: {
+  projectId: string;
+  profileId: string;
+  captureCount: number;
+}) {
+  const client = useQueryClient();
+  const [error, setError] = useState<unknown>();
+  const exportsQuery = useQuery({
+    queryKey: ["exports", projectId, profileId],
+    queryFn: () => api.exports(projectId, profileId),
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => ["queued", "processing"].includes(item.status))
+        ? 1500
+        : false,
+  });
+  const generation = useMutation({
+    mutationFn: (format: "gif" | "webm") => api.createExport(projectId, profileId, format),
+    onSuccess: async () => {
+      setError(undefined);
+      await client.invalidateQueries({ queryKey: ["exports", projectId, profileId] });
+    },
+    onError: setError,
+  });
+  return (
+    <div className="export-panel">
+      <div className="export-actions">
+        {(["gif", "webm"] as const).map((format) => {
+          const item = exportsQuery.data?.find((candidate) => candidate.format === format);
+          const pending = generation.isPending && generation.variables === format;
+          const busy = pending || item?.status === "queued" || item?.status === "processing";
+          const name = format.toUpperCase();
+          const action = busy
+            ? item?.status === "processing"
+              ? `Building ${name}…`
+              : `Queueing ${name}…`
+            : item?.status === "failed"
+              ? `Retry ${name}`
+              : item?.available
+                ? `Regenerate ${name}`
+                : `Generate ${name}`;
+          return (
+            <div className="export-control" key={format}>
+              <div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={busy || exportsQuery.isLoading || captureCount < 2}
+                  aria-busy={busy}
+                  onClick={() => {
+                    setError(undefined);
+                    generation.mutate(format);
+                  }}
+                >
+                  {busy && <Spinner />}
+                  {action}
+                </Button>
+                {item?.available && item.downloadUrl && (
+                  <a className="button button-secondary button-sm" href={item.downloadUrl} download>
+                    Download {name} ↓
+                  </a>
+                )}
+              </div>
+              <small role="status" aria-live="polite">
+                {captureCount < 2
+                  ? "Needs at least two successful captures"
+                  : exportStatusText(item, busy)}
+              </small>
+            </div>
+          );
+        })}
+      </div>
+      <p className="export-help">
+        Generated on the server worker with FFmpeg from up to 90 captures. Large histories can take
+        tens of seconds; it is safe to leave this page while they run.
+      </p>
+      <ErrorNotice error={error ?? exportsQuery.error} />
+      {exportsQuery.data?.map((item) =>
+        item.status === "failed" && item.error ? (
+          <div className="error-notice" role="alert" key={item.format}>
+            <span aria-hidden="true">×</span>
+            {item.format.toUpperCase()} generation failed: {item.error}
+          </div>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
 function ProjectComparePage() {
   const { id = "" } = useParams();
   const client = useQueryClient();
@@ -693,20 +797,11 @@ function ProjectComparePage() {
                   ))}
                 </select>
               </Field>
-              <div className="export-actions">
-                <Button
-                  variant="secondary"
-                  onClick={() => api.createExport(id, activeProfile.id, "gif").catch(setError)}
-                >
-                  GIF ↓
-                </Button>
-                <Button
-                  variant="secondary"
-                  onClick={() => api.createExport(id, activeProfile.id, "webm").catch(setError)}
-                >
-                  WebM ↓
-                </Button>
-              </div>
+              <ExportControls
+                projectId={id}
+                profileId={activeProfile.id}
+                captureCount={successfulCount}
+              />
             </div>
           </div>
           <ComparisonTray
@@ -1924,6 +2019,10 @@ function PublicGallery() {
   const gallery = useQuery({
     queryKey: ["public", mode, value, profileId, page],
     queryFn: () => api.publicGallery(mode, value, profileId, page + 1),
+    refetchInterval: (query) =>
+      query.state.data?.exports.some((item) => ["queued", "processing"].includes(item.status))
+        ? 1500
+        : false,
   });
   if (gallery.isLoading) return <Splash />;
   if (!gallery.data)
@@ -1971,23 +2070,43 @@ function PublicGallery() {
             </button>
           ))}
         </div>
-        <div className="public-actions">
-          {activeProfile && (
-            <>
-              <a
-                className="button button-secondary button-sm"
-                href={`/${mode}/${value}/${activeProfile.id}/latest.gif`}
-              >
-                Latest GIF ↓
-              </a>
-              <a
-                className="button button-secondary button-sm"
-                href={`/${mode}/${value}/${activeProfile.id}/latest.webm`}
-              >
-                Latest WebM ↓
-              </a>
-            </>
-          )}
+        <div className="public-export-panel">
+          <div className="public-actions">
+            {gallery.data.exports.map((item) => {
+              const name = item.format.toUpperCase();
+              const busy = item.status === "queued" || item.status === "processing";
+              return (
+                <div className="public-export-control" key={item.format}>
+                  {item.available && item.downloadUrl ? (
+                    <a
+                      className="button button-secondary button-sm"
+                      href={item.downloadUrl}
+                      download
+                    >
+                      Download latest {name} ↓
+                    </a>
+                  ) : (
+                    <button className="button button-secondary button-sm" disabled>
+                      {busy ? `Preparing ${name}…` : `${name} unavailable`}
+                    </button>
+                  )}
+                  <small role="status" aria-live="polite">
+                    {busy
+                      ? item.available
+                        ? "A newer version is being generated"
+                        : `${item.requestedFrameCount} frames · generating on server`
+                      : item.available
+                        ? `${item.frameCount} frames${item.updatedAt ? ` · ${new Date(item.updatedAt).toLocaleString()}` : ""}`
+                        : "The project owner has not generated this yet"}
+                  </small>
+                </div>
+              );
+            })}
+          </div>
+          <p className="public-export-help">
+            These download the latest completed server-generated animations; they are not built in
+            your browser.
+          </p>
         </div>
       </div>
       <section className="public-comparison-workspace">

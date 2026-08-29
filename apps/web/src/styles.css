@@ -1148,7 +1148,37 @@ legend {
 .export-actions,
 .public-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
+}
+
+.export-panel,
+.public-export-panel,
+.export-control,
+.public-export-control {
+  display: grid;
+  gap: 8px;
+}
+
+.export-control > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.export-control small,
+.public-export-control small,
+.export-help,
+.public-export-help {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.export-help,
+.public-export-help {
+  max-width: 620px;
+  margin: 0;
 }
 
 .profile-settings {
@@ -1989,6 +2019,19 @@ input[type="range"] {
   gap: 24px;
 }
 
+.public-export-panel {
+  justify-items: end;
+}
+
+.public-export-control {
+  align-content: start;
+}
+
+.public-export-help {
+  max-width: 460px;
+  text-align: right;
+}
+
 .public-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2157,6 +2200,15 @@ input[type="range"] {
 
   .publishing-access small {
     grid-column: auto;
+  }
+
+  .public-export-panel {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .public-export-help {
+    text-align: left;
   }
 
   .publishing-destination,
