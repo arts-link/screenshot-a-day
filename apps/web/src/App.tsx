@@ -15,6 +15,7 @@ import {
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
 import { api, type Comparison, type ProjectDetail, type Webhook } from "./api";
 import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
+import { projectGalleryUrl } from "./gallery-url";
 import {
   AccentRule,
   Badge,
@@ -443,7 +444,15 @@ function ConfirmationDialog({
   );
 }
 
-function ProjectHeader({ project, action }: { project: ProjectDetail; action?: ReactNode }) {
+function ProjectHeader({
+  project,
+  action,
+  galleryUrl,
+}: {
+  project: ProjectDetail;
+  action?: ReactNode;
+  galleryUrl?: string | null;
+}) {
   return (
     <>
       <header className="page-head project-header">
@@ -453,9 +462,21 @@ function ProjectHeader({ project, action }: { project: ProjectDetail; action?: R
           </Link>
           <Eyebrow>{project.publishMode} timeline</Eyebrow>
           <h1>{project.name}</h1>
-          <a href={project.url} target="_blank" rel="noreferrer">
-            {project.url} ↗
-          </a>
+          <div className="project-header-links">
+            <a href={project.url} target="_blank" rel="noreferrer">
+              {project.url} ↗
+            </a>
+            {galleryUrl && (
+              <a
+                className="project-gallery-link"
+                href={galleryUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open gallery ↗
+              </a>
+            )}
+          </div>
         </div>
         {action}
       </header>
@@ -632,6 +653,7 @@ function ProjectComparePage() {
     <>
       <ProjectHeader
         project={project.data}
+        galleryUrl={projectGalleryUrl(project.data, location.origin)}
         action={
           <div className="capture-action">
             <Button
@@ -807,14 +829,7 @@ function ProjectConfigurationPage() {
   if (project.isLoading) return <Splash />;
   if (!project.data) return <ErrorNotice error={project.error} />;
   const p = project.data;
-  const shareUrl =
-    p.publishMode !== "private" && p.staticPublication?.active
-      ? p.staticPublication.url
-      : p.publishMode === "unlisted" && p.shareToken
-        ? `${location.origin}/s/${p.shareToken}`
-        : p.publishMode === "indexable"
-          ? `${location.origin}/p/${p.slug}`
-          : null;
+  const shareUrl = projectGalleryUrl(p, location.origin);
   const staticStatus = p.staticPublication
     ? publicationStatus(p.staticPublication, p.publishMode)
     : null;

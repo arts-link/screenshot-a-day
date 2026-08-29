@@ -770,10 +770,24 @@ legend {
   min-height: 440px;
 }
 
-.project-header > div:first-child > a:not(.back-link) {
+.project-header-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+
+.project-header-links a {
   color: var(--text-body);
   font-size: 16px;
   text-decoration: none;
+}
+
+.project-header-links .project-gallery-link {
+  color: var(--text-accent);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .project-tabs {

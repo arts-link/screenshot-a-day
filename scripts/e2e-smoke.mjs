@@ -164,6 +164,10 @@ try {
 
   await page.goto(`${baseUrl}/projects/${indexable.id}/compare`);
   await page.getByRole("heading", { name: "Compare two captures" }).waitFor();
+  assert.equal(
+    await page.getByRole("link", { name: "Open gallery" }).getAttribute("href"),
+    `${baseUrl}/p/e2e-indexable`,
+  );
   assert.equal(await page.locator(".capture-card").count(), 12);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /13 comparable captures/i);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /1 failed attempt/i);
@@ -179,6 +183,12 @@ try {
     .getByText("Choose Earlier and Later to generate a pixel comparison automatically.")
     .waitFor();
   assert.equal(await page.locator(".compare-slot.filled").count(), 0);
+
+  await page.goto(`${baseUrl}/projects/${unlisted.id}/compare`);
+  assert.equal(
+    await page.getByRole("link", { name: "Open gallery" }).getAttribute("href"),
+    `${baseUrl}/s/${unlisted.shareToken}`,
+  );
 
   await page.goto(`${baseUrl}/projects/${indexable.id}/configuration`);
   for (const heading of [
