@@ -9,6 +9,8 @@
       content="Screenshot-a-Day is a self-hosted Wayback Machine for the sites you own. Capture, compare, and publish a visual history on your infrastructure."
     />
     <link rel="canonical" href="https://arts-link.github.io/screenshot-a-day/" />
+    <link rel="preconnect" href="https://g.arts-link.com" />
+    <link rel="dns-prefetch" href="https://g.arts-link.com" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -76,7 +78,20 @@
       <nav aria-label="Primary navigation">
         <a href="#how-it-works">How it works</a>
         <a href="#quick-start">Install</a>
-        <a class="nav-source" href="https://github.com/arts-link/screenshot-a-day">
+        <a
+          class="nav-demo"
+          href="https://screenshots.arts-link.com/"
+          data-analytics-destination="demo"
+          data-analytics-placement="header"
+        >
+          Live demo <span aria-hidden="true">↗</span>
+        </a>
+        <a
+          class="nav-source"
+          href="https://github.com/arts-link/screenshot-a-day"
+          data-analytics-destination="source"
+          data-analytics-placement="header"
+        >
           Source <span aria-hidden="true">↗</span>
         </a>
       </nav>
@@ -85,18 +100,36 @@
     <main id="main">
       <section class="hero" id="top">
         <div class="hero-copy">
-          <p class="eyebrow"><span>Open-source preview</span> · v0.1</p>
+          <p class="eyebrow">
+            <a
+              href="https://github.com/arts-link/screenshot-a-day/releases/tag/v0.1.0"
+              data-analytics-destination="release"
+              data-analytics-placement="hero-badge"
+            >
+              <span>Open source</span> · v0.1.0
+            </a>
+          </p>
           <h1>A Wayback Machine for the sites <em>you own.</em></h1>
           <p class="hero-intro">
             Capture your websites on a schedule. See exactly what changed. Turn years of pixels into
             a visual record—kept on your infrastructure, not ours.
           </p>
           <div class="hero-actions">
-            <a class="button button-primary" href="https://github.com/arts-link/screenshot-a-day">
-              View on GitHub <span aria-hidden="true">↗</span>
+            <a
+              class="button button-primary"
+              href="https://screenshots.arts-link.com/"
+              data-analytics-destination="demo"
+              data-analytics-placement="hero"
+            >
+              View live demo <span aria-hidden="true">↗</span>
             </a>
-            <a class="button button-quiet" href="#quick-start">
-              Run with Docker <span aria-hidden="true">↓</span>
+            <a
+              class="button button-quiet"
+              href="#quick-start"
+              data-analytics-destination="install"
+              data-analytics-placement="hero"
+            >
+              Install v0.1.0 <span aria-hidden="true">↓</span>
             </a>
           </div>
           <ul class="hero-notes" aria-label="Project highlights">
@@ -229,9 +262,15 @@
             storage you control.
           </p>
           <p>
-            Screenshot-a-Day includes no product telemetry and does not report usage to Arts-Link.
+            The self-hosted Screenshot-a-Day application includes no product telemetry and does not
+            report usage to Arts-Link. This marketing site uses anonymous, cookieless analytics as
+            described in its <a href="./privacy.html">privacy notice</a>.
           </p>
-          <a href="https://github.com/arts-link/screenshot-a-day/blob/main/docs/security.md">
+          <a
+            href="https://github.com/arts-link/screenshot-a-day/blob/main/docs/security.md"
+            data-analytics-destination="security"
+            data-analytics-placement="ownership"
+          >
             Read the security model <span aria-hidden="true">→</span>
           </a>
         </div>
@@ -275,8 +314,8 @@
             installation secrets, bring it up, and open the setup screen.
           </p>
           <p class="preview-note">
-            <span>Early preview</span> v0.1 is for self-hosters who are comfortable running Docker
-            Compose and reading the deployment guide.
+            <span>First tested release</span> v0.1.0 is for self-hosters who are comfortable running
+            Docker Compose and reading the deployment guide.
           </p>
         </div>
         <div class="terminal-wrap">
@@ -293,6 +332,8 @@
           <a
             class="terminal-link"
             href="https://github.com/arts-link/screenshot-a-day/blob/main/docs/guides/deployment.md"
+            data-analytics-destination="deployment-guide"
+            data-analytics-placement="quick-start"
           >
             Read the deployment guide <span aria-hidden="true">↗</span>
           </a>
@@ -303,9 +344,24 @@
         <span class="closing-date" aria-hidden="true">TODAY → TOMORROW</span>
         <p class="eyebrow">The web changes. Keep the receipts.</p>
         <h2>Start remembering.</h2>
-        <a class="button button-primary" href="https://github.com/arts-link/screenshot-a-day">
-          Explore the source <span aria-hidden="true">↗</span>
-        </a>
+        <div class="closing-actions">
+          <a
+            class="button button-primary"
+            href="https://screenshots.arts-link.com/"
+            data-analytics-destination="demo"
+            data-analytics-placement="closing"
+          >
+            View live demo <span aria-hidden="true">↗</span>
+          </a>
+          <a
+            class="button button-quiet"
+            href="https://github.com/arts-link/screenshot-a-day"
+            data-analytics-destination="source"
+            data-analytics-placement="closing"
+          >
+            Explore the source <span aria-hidden="true">↗</span>
+          </a>
+        </div>
       </section>
     </main>
 
@@ -315,14 +371,22 @@
         <p>Websites, visual systems, and useful little machines.</p>
       </div>
       <div class="footer-meta">
-        <p>Screenshot-a-Day · Open-source preview</p>
+        <p>Screenshot-a-Day · Open source · v0.1.0</p>
         <p>
-          <a href="https://github.com/arts-link/screenshot-a-day">AGPL-3.0 source</a>
+          <a
+            href="https://github.com/arts-link/screenshot-a-day"
+            data-analytics-destination="source"
+            data-analytics-placement="footer"
+            >AGPL-3.0 source</a
+          >
+          <span aria-hidden="true">·</span>
+          <a href="./privacy.html">Privacy</a>
           <span aria-hidden="true">·</span> 2026
         </p>
       </div>
     </footer>
 
+    <script src="./analytics.js"></script>
     <script src="./script.js"></script>
   </body>
 </html>
