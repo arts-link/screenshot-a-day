@@ -8,9 +8,21 @@ export type ApiScope = "read" | "capture:trigger" | "manage";
 
 export interface Identity {
   kind: "session" | "token";
+  tokenId?: string;
   userId?: string;
   scopes: ApiScope[];
   projectIds: string[] | null;
+}
+
+export function authenticateBearer(db: AppDatabase, token: string): Identity | null {
+  const stored = db.getApiToken(hashToken(token));
+  if (!stored) return null;
+  return {
+    kind: "token",
+    tokenId: stored.id,
+    scopes: JSON.parse(stored.scopes_json) as ApiScope[],
+    projectIds: stored.project_ids_json ? (JSON.parse(stored.project_ids_json) as string[]) : null,
+  };
 }
 
 export function parseBearerToken(authorization: string | undefined): string | null {
@@ -74,15 +86,7 @@ export function createSession(db: AppDatabase, userId: string): { token: string;
 
 export function authenticate(db: AppDatabase, request: FastifyRequest): Identity | null {
   const bearer = parseBearerToken(request.headers.authorization);
-  if (bearer) {
-    const token = db.getApiToken(hashToken(bearer));
-    if (!token) return null;
-    return {
-      kind: "token",
-      scopes: JSON.parse(token.scopes_json) as ApiScope[],
-      projectIds: token.project_ids_json ? (JSON.parse(token.project_ids_json) as string[]) : null,
-    };
-  }
+  if (bearer) return authenticateBearer(db, bearer);
   const sessionToken = request.cookies[SESSION_COOKIE];
   if (!sessionToken) return null;
   const session = db.getSession(hashToken(sessionToken));

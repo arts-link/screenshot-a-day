@@ -2365,7 +2365,9 @@ function Settings() {
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
   const [revealed, setRevealed] = useState<string>();
   const [copied, setCopied] = useState(false);
+  const [mcpCopied, setMcpCopied] = useState(false);
   const [error, setError] = useState<unknown>();
+  const mcpUrl = `${window.location.origin}/mcp`;
   const create = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -2395,6 +2397,15 @@ function Settings() {
       setError(new Error("The token could not be copied. Select it and copy it manually."));
     }
   };
+  const copyMcpUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(mcpUrl);
+      setMcpCopied(true);
+      setError(undefined);
+    } catch {
+      setError(new Error("The MCP URL could not be copied. Select it and copy it manually."));
+    }
+  };
   const format = (bytes = 0) =>
     new Intl.NumberFormat(undefined, {
       style: "unit",
@@ -2416,7 +2427,33 @@ function Settings() {
         <Card className="api-access-card">
           <AccentRule />
           <h2>API access</h2>
-          <p>Tokens are hashed at rest. This quick form creates read and capture-trigger access.</p>
+          <p>
+            Tokens are hashed at rest and work with REST automation and the experimental MCP server.
+            This quick form creates the recommended read and capture-trigger access.
+          </p>
+          <div className="mcp-access-note">
+            <div className="mcp-access-head">
+              <Badge tone="accent">Experimental MCP</Badge>
+              <strong>Connect remote agents with an API token</strong>
+            </div>
+            <div className="mcp-endpoint">
+              <code aria-label="MCP server URL">{mcpUrl}</code>
+              <Button size="sm" variant="secondary" onClick={copyMcpUrl}>
+                {mcpCopied ? "Copied ✓" : "Copy MCP URL"}
+              </Button>
+            </div>
+            <p>
+              <code>read</code> lists projects and captures; <code>capture:trigger</code> queues new
+              captures. Project-limited tokens keep the same boundary.
+            </p>
+            <a
+              href="https://github.com/arts-link/screenshot-a-day/blob/main/docs/api/README.md#experimental-mcp-server"
+              target="_blank"
+              rel="noreferrer"
+            >
+              MCP setup and tool reference →
+            </a>
+          </div>
           {revealed && (
             <div className="token-reveal" role="status" aria-live="polite">
               <div className="token-reveal-head">

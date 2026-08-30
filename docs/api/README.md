@@ -15,6 +15,43 @@ curl --fail --request POST \
 
 Scopes are `read`, `capture:trigger`, and `manage`. A token may be limited to specific project IDs. Reusing an idempotency key for the same project returns the original run.
 
+## Experimental MCP server
+
+The API process also serves a stateless Streamable HTTP MCP endpoint at `/mcp`. Configure a remote MCP client with the full URL and a Screenshot-a-Day API token:
+
+```text
+https://sad.example.com/mcp
+Authorization: Bearer YOUR_SAD_API_TOKEN
+```
+
+Browser sessions are not accepted on this endpoint. A token needs `read` for inspection tools and `capture:trigger` for capture requests. Project-limited tokens see and operate only on their configured project IDs.
+
+The v0.1 endpoint exposes four tools:
+
+| Tool                  | Scope             | Input                                                              | Result                                                            |
+| --------------------- | ----------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `list_projects`       | `read`            | Empty object                                                       | Visible project summaries                                         |
+| `get_project`         | `read`            | `projectId`                                                        | Project details, profiles, schedule, and static-publication state |
+| `list_captures`       | `read`            | `projectId`; optional `profileId`, `status`, `limit`, and `offset` | Capture records plus matching and successful/failed totals        |
+| `trigger_capture_run` | `capture:trigger` | `projectId`; optional non-empty `profileIds` and `idempotencyKey`  | The queued or previously idempotent `runId`                       |
+
+`list_captures` is newest-first. Its `status` defaults to `all`, `limit` defaults to 25 and is capped at 100, and `offset` defaults to zero. Capture records contain relative authenticated REST `imageUrl` and `thumbnailUrl` values; v0.1 does not embed image bytes in MCP responses.
+
+Every successful tool call returns concise text plus `structuredContent`. Authorization, missing-resource, and operational failures are ordinary MCP tool errors so a client keeps its connection. Missing, malformed, or revoked bearer credentials fail the HTTP request with `401`; invalid Host or browser Origin values fail with `403`.
+
+For a low-level connectivity check, list the tools directly:
+
+```sh
+curl --fail --request POST \
+  --header "Authorization: Bearer $SAD_API_TOKEN" \
+  --header "Accept: application/json, text/event-stream" \
+  --header "Content-Type: application/json" \
+  --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+  "https://sad.example.com/mcp"
+```
+
+This MCP surface is experimental in v0.1. Its tool names and schemas are not covered by the stable `/api/v1` compatibility promise. OAuth discovery, stdio, prompts, resources, embedded images, comparisons, run history, and management tools are not included.
+
 ## Resources
 
 The authenticated API includes projects, profiles, runs, captures, comparisons, exports, webhooks, API tokens, and storage summaries. Notable state-changing routes are:
@@ -41,5 +78,7 @@ Scheduling an enabled profile normally requires a prior successful capture. Auto
 ## Compatibility
 
 Compatible additions remain in `/api/v1`. A removal or semantic breaking change requires a parallel API version and documented migration period. Product SemVer does not silently override that promise.
+
+The experimental `/mcp` endpoint is outside that compatibility guarantee until a later release explicitly marks its MCP surface stable.
 
 Errors have an HTTP status and `{ "error": "human-readable summary" }`. Validation failures also include structured `issues`. Comparison capacity uses `429` for rate limits, `422` for oversized decoded images, and `503` with `Retry-After` when the bounded comparison queue is full. Requests are limited to 30 MB in v0.1.0.

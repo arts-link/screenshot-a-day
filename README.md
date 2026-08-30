@@ -5,7 +5,7 @@
 [![License: AGPL-3.0-or-later](https://img.shields.io/github/license/arts-link/screenshot-a-day)](LICENSE)
 [![DCO 1.1](https://img.shields.io/badge/DCO-1.1-4c1)](CONTRIBUTING.md#developer-certificate-of-origin)
 
-Screenshot-a-Day is a self-hosted visual history for websites. It captures reproducible screenshots on a schedule, compares changes, publishes galleries and GIF/WebM timelines, and can notify other tools through signed webhooks.
+Screenshot-a-Day is a self-hosted visual history for websites. It captures reproducible screenshots on a schedule, compares changes, publishes galleries and GIF/WebM timelines, and can notify other tools through signed webhooks. An experimental MCP endpoint lets agents inspect projects and capture history or queue a new capture.
 
 [Website and documentation](https://arts-link.github.io/screenshot-a-day/) · [Source and releases](https://github.com/arts-link/screenshot-a-day) · [Security reporting](SECURITY.md)
 
@@ -42,6 +42,24 @@ ghcr.io/arts-link/screenshot-a-day-worker:0.1.0
 
 To keep the home server private while hosting galleries elsewhere, configure a portable static publication target using the [static publishing guide](docs/guides/static-publishing.md). Existing Vercel projects, Netlify sites, and dedicated SFTP roots are supported.
 
+## Experimental MCP endpoint
+
+Remote MCP clients can connect to `https://sad.example.com/mcp` with a Screenshot-a-Day API bearer token. Grant `read` to inspect projects and captures and `capture:trigger` to queue captures; project-limited tokens retain the same boundary over MCP. A representative client entry is:
+
+```json
+{
+  "mcpServers": {
+    "screenshot-a-day": {
+      "type": "http",
+      "url": "https://sad.example.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_SAD_API_TOKEN" }
+    }
+  }
+}
+```
+
+Client configuration formats vary. See the [API and MCP reference](docs/api/README.md) for the four v0.1 tools, authentication details, and compatibility status.
+
 ## Supported platforms and v0.1 limitations
 
 Published images support Docker-compatible linux/amd64 and linux/arm64 hosts. Docker Desktop can run them on supported macOS and Windows hosts through its Linux VM.
@@ -58,7 +76,7 @@ pnpm check
 pnpm dev
 ```
 
-Architecture and contributor details live in the [development guide](docs/development.md). The API serves interactive OpenAPI documentation at `/docs/api`.
+Architecture and contributor details live in the [development guide](docs/development.md). The REST API serves interactive OpenAPI documentation at `/docs/api`; MCP is documented separately in the [API and MCP reference](docs/api/README.md).
 
 Contributions require a [DCO 1.1 sign-off](CONTRIBUTING.md#developer-certificate-of-origin); the project does not use a CLA. Report vulnerabilities privately as described in the [security policy](SECURITY.md).
 

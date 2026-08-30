@@ -10,6 +10,7 @@ All notable changes to Screenshot-a-Day are documented here. The project follows
 - Cross-browser capture profiles, schedules, retained history, comparisons, GIF/WebM exports, and signed webhooks.
 - Docker Compose deployment, documented security controls, OpenAPI documentation, and coordinated semantic releases.
 - Portable static publication to Vercel, Netlify, and SFTP with profile galleries and cross-page browser-only comparisons.
+- Experimental stateless MCP over Streamable HTTP with scoped tools to list projects, inspect project and capture metadata, and trigger capture runs with optional idempotency.
 
 ### Changed
 
