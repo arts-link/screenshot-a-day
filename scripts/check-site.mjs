@@ -8,8 +8,10 @@ const canonical = "https://arts-link.github.io/screenshot-a-day/";
 export const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const requiredFiles = [
   "index.html",
+  "privacy.html",
   "styles.css",
   "script.js",
+  "analytics.js",
   "og.png",
   "robots.txt",
   "sitemap.xml",
@@ -19,6 +21,8 @@ const requiredFiles = [
 for (const file of requiredFiles) await access(resolve(site, file));
 
 const html = await readFile(resolve(site, "index.html"), "utf8");
+const privacy = await readFile(resolve(site, "privacy.html"), "utf8");
+const analytics = await readFile(resolve(site, "analytics.js"), "utf8");
 const requireMatch = (pattern, message) => {
   if (!pattern.test(html)) throw new Error(message);
 };
@@ -50,6 +54,54 @@ requireMatch(
   /no product telemetry/i,
   "site/index.html must state that the product has no telemetry",
 );
+requireMatch(/href="\.\/privacy\.html"/i, "site/index.html must link to its privacy notice");
+requireMatch(
+  /href="https:\/\/screenshots\.arts-link\.com\/"/i,
+  "site/index.html must link to the live demo",
+);
+requireMatch(/releases\/tag\/v0\.1\.0/i, "site/index.html must link to the v0.1.0 release");
+requireMatch(/Open source[\s\S]*v0\.1\.0/i, "site/index.html must show the stable version");
+
+if (!/<html\s+lang="en"/i.test(privacy))
+  throw new Error("site/privacy.html must declare its language");
+if (!/self-hosted[\s\S]*no product telemetry/i.test(privacy))
+  throw new Error("site/privacy.html must preserve the product telemetry boundary");
+for (const disclosure of [
+  /cookieless/i,
+  /PostHog/i,
+  /session replay/i,
+  /Do Not Track/i,
+  /Global Privacy Control/i,
+]) {
+  if (!disclosure.test(privacy))
+    throw new Error(`site/privacy.html is missing disclosure ${disclosure}`);
+}
+
+for (const requirement of [
+  /arts-link\.github\.io/,
+  /\/screenshot-a-day\//,
+  /https:\/\/g\.arts-link\.com/,
+  /cookieless_mode:\s*"always"/,
+  /person_profiles:\s*"never"/,
+  /autocapture:\s*false/,
+  /disable_session_recording:\s*true/,
+  /disable_surveys:\s*true/,
+  /advanced_disable_flags:\s*true/,
+  /respect_dnt:\s*true/,
+  /navigator\.globalPrivacyControl/,
+  /before_send:\s*sanitizeEvent/,
+]) {
+  if (!requirement.test(analytics))
+    throw new Error(`site/analytics.js is missing privacy guard ${requirement}`);
+}
+for (const event of ["$pageview", "marketing_cta_clicked", "install_command_copied"]) {
+  if (!analytics.includes(`"${event}"`))
+    throw new Error(`site/analytics.js is missing allowed event ${event}`);
+}
+for (const forbidden of [/startSessionRecording/, /posthog\.identify\s*\(/, /posthog\.people/]) {
+  if (forbidden.test(analytics))
+    throw new Error(`site/analytics.js contains forbidden tracking behavior ${forbidden}`);
+}
 
 const jsonLdMatch = html.match(/<script\s+type="application\/ld\+json">([\s\S]*?)<\/script>/i);
 if (!jsonLdMatch) throw new Error("site/index.html is missing JSON-LD metadata");
@@ -88,6 +140,8 @@ if (!robots.includes("User-agent: *") || !robots.includes(`Sitemap: ${canonical}
 const sitemap = await readFile(resolve(site, "sitemap.xml"), "utf8");
 if (!sitemap.includes(`<loc>${canonical}</loc>`))
   throw new Error("site/sitemap.xml has the wrong canonical URL");
+if (!sitemap.includes(`<loc>${canonical}privacy.html</loc>`))
+  throw new Error("site/sitemap.xml omits the privacy notice");
 
 const png = await readFile(resolve(site, "og.png"));
 if (extname("og.png") !== ".png" || png.readUInt32BE(16) !== 1200 || png.readUInt32BE(20) !== 630) {

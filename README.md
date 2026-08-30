@@ -9,7 +9,7 @@ Screenshot-a-Day is a self-hosted visual history for websites. It captures repro
 
 [Website and documentation](https://arts-link.github.io/screenshot-a-day/) · [Source and releases](https://github.com/arts-link/screenshot-a-day) · [Security reporting](SECURITY.md)
 
-Version 0.1.0 is the initial open-source release. The public demo at `https://screenshots.arts-link.com/` will be linked when the released deployment passes its launch checks. Follow the [release checklist](docs/plans/release-v0.1.0.md), read the [v0.1.0 release notes](docs/releases/v0.1.0.md), or review the [architecture decisions](docs/adr/README.md).
+Version 0.1.0 is the initial open-source release. The public demo at `https://screenshots.arts-link.com/` will be linked when the released deployment passes its launch checks. Follow the [technical release runbook](docs/plans/release-v0.1.0.md), use the [30-day promotion runbook](docs/launch/promotion-v0.1.0.md), read the [v0.1.0 release notes](docs/releases/v0.1.0.md), or review the [architecture decisions](docs/adr/README.md).
 
 ## Quick start
 
@@ -64,7 +64,7 @@ Client configuration formats vary. See the [API and MCP reference](docs/api/READ
 
 Published images support Docker-compatible linux/amd64 and linux/arm64 hosts. Docker Desktop can run them on supported macOS and Windows hosts through its Linux VM.
 
-Version 0.1 uses SQLite and a local persistent volume, supports one API replica, and has forward-only database migrations. Pixel comparisons are profile-specific and limited to 16 million decoded pixels. Operators are responsible for TLS, storage, backups, monitoring, retention, and permission to capture each target. Screenshot-a-Day includes no product telemetry. Captures are not signed, certified, or tamper-proof; “signed” refers only to outbound webhook authentication.
+Version 0.1 uses SQLite and a local persistent volume, supports one API replica, and has forward-only database migrations. Pixel comparisons are profile-specific and limited to 16 million decoded pixels. Operators are responsible for TLS, storage, backups, monitoring, retention, and permission to capture each target. The self-hosted Screenshot-a-Day application includes no product telemetry; the separate project marketing site documents its anonymous, cookieless analytics in its privacy notice. Captures are not signed, certified, or tamper-proof; “signed” refers only to outbound webhook authentication.
 
 ## Development
 
