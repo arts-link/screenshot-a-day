@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#12100e" />
+    <meta
+      name="description"
+      content="Privacy information for the Screenshot-a-Day marketing site and self-hosted application."
+    />
+    <link rel="canonical" href="https://arts-link.github.io/screenshot-a-day/privacy.html" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <title>Privacy — Screenshot-a-Day</title>
+  </head>
+  <body class="privacy-page">
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="product-mark" href="./" aria-label="Screenshot-a-Day home">
+        <span class="aperture" aria-hidden="true"><span></span></span>
+        <span class="product-name">Screenshot<span>-a-Day</span></span>
+      </a>
+      <nav aria-label="Privacy navigation">
+        <a href="./">Back to the project</a>
+        <a class="nav-source" href="https://github.com/arts-link/screenshot-a-day">
+          Source <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
+    </header>
+
+    <main class="privacy-main section-shell" id="main">
+      <p class="eyebrow">Privacy</p>
+      <h1>The application is yours.<br /><em>The marketing site is measured lightly.</em></h1>
+
+      <section>
+        <h2>Self-hosted application</h2>
+        <p>
+          Screenshot-a-Day installations include no product telemetry and do not report captures,
+          projects, targets, usage, credentials, or operator activity to Arts-Link. An operator can
+          separately choose to configure analytics for a gallery they publish; that optional
+          configuration belongs to that operator and is not enabled by Arts-Link.
+        </p>
+      </section>
+
+      <section>
+        <h2>Public marketing site</h2>
+        <p>
+          This GitHub Pages marketing site uses PostHog to count anonymous page views and measure
+          clicks on release, demo, source, documentation, and installation actions. It also records
+          when the installation command is copied, but never records the command text.
+        </p>
+        <p>
+          Analytics runs in cookieless mode. It creates no analytics cookies or browser-storage
+          identifiers, creates no person profiles, and does not use session replay, heatmaps,
+          autocapture, surveys, feature flags, exception capture, or performance capture. Analytics
+          must remain disabled unless the PostHog project is configured to discard visitor IP
+          addresses.
+        </p>
+      </section>
+
+      <section>
+        <h2>Campaign and browser information</h2>
+        <p>
+          Events can include the page path, referring site, browser/device information supplied by
+          PostHog, release version, CTA placement, destination category, and allowlisted
+          <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, and
+          <code>utm_content</code> values. Query strings and fragments are removed from recorded
+          page and referrer URLs. Campaign values are never intended to contain personal
+          information.
+        </p>
+      </section>
+
+      <section>
+        <h2>Your browser preference</h2>
+        <p>
+          The marketing site does not initialize analytics when the browser sends Do Not Track or
+          Global Privacy Control. Blocking the analytics request does not affect the content,
+          installation instructions, demo, or source links.
+        </p>
+      </section>
+
+      <section>
+        <h2>Questions</h2>
+        <p>
+          Inspect the exact implementation in
+          <a href="https://github.com/arts-link/screenshot-a-day/blob/main/site/analytics.js"
+            >site/analytics.js</a
+          >. For privacy questions or requests, use the contact route at
+          <a href="https://www.arts-link.com/">Arts-Link</a>.
+        </p>
+      </section>
+    </main>
+
+    <footer>
+      <div>
+        <a class="footer-maker" href="https://www.arts-link.com/">arts-link</a>
+        <p>Websites, visual systems, and useful little machines.</p>
+      </div>
+      <div class="footer-meta">
+        <p>Screenshot-a-Day · Privacy</p>
+        <p><a href="./">Project home</a> <span aria-hidden="true">·</span> 2026</p>
+      </div>
+    </footer>
+  </body>
+</html>

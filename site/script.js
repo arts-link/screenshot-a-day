@@ -1,4 +1,4 @@
-/* global document, navigator, window */
+/* global CustomEvent, document, navigator, window */
 
 const button = document.querySelector("[data-copy]");
 const command = document.querySelector("[data-command]");
@@ -26,6 +26,7 @@ button?.addEventListener("click", async () => {
   try {
     await copyText(command.textContent.trim());
     button.textContent = "Copied ✓";
+    document.dispatchEvent(new CustomEvent("sad:install-command-copied"));
   } catch {
     button.textContent = "Select + copy";
   }

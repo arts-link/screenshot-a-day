@@ -1,6 +1,6 @@
 # v0.1.0 launch copy
 
-Use the clean Pages URL without tracking parameters. Publish only after the GitHub Release, GHCR images, Pages launch state, and live demo are healthy. Replace bracketed operational facts only with verified values.
+Use the clean Pages URL for Hacker News and Reddit. For owned posts, directories, and direct outreach, use only the allowlisted campaign parameters in the [promotion runbook](promotion-v0.1.0.md). Publish only after the GitHub Release, GHCR images, Pages launch state, analytics disclosure, and live demo are healthy. Replace bracketed operational facts only with verified values.
 
 ## Shared links
 
@@ -13,7 +13,7 @@ Use the clean Pages URL without tracking parameters. Publish only after the GitH
 
 Screenshot-a-Day v0.1.0 is out: a self-hosted visual history for websites you are responsible for.
 
-Schedule reproducible Chromium, Firefox, and WebKit captures; compare changes; keep private archives or publish galleries; and generate GIF/WebM timelines. It runs from two multi-architecture containers on your infrastructure, includes no product telemetry, and is AGPL-3.0-or-later.
+Schedule reproducible Chromium, Firefox, and WebKit captures; compare changes; keep private archives or publish galleries; and generate GIF/WebM timelines. The self-hosted application runs from two multi-architecture containers on your infrastructure, includes no product telemetry, and is AGPL-3.0-or-later.
 
 Try the public demo, read the quick start, or inspect the source:
 https://arts-link.github.io/screenshot-a-day/
@@ -47,7 +47,7 @@ Body:
 >
 > v0.1.0 is intentionally small: one API replica, forward-only migrations, and operator-managed TLS/backups/storage. I would especially value feedback on the deployment path, capture reproducibility, and which comparison views are actually useful.
 
-## r/selfhosted — T+17 to T+21
+## r/selfhosted — next New Project Friday after T+14
 
 Title:
 
@@ -57,7 +57,7 @@ Body:
 
 > I have released Screenshot-a-Day, an AGPL self-hosted service for keeping a visual history of websites you manage. It captures with Chromium, Firefox, and WebKit, compares changes, supports private/unlisted/public sharing, and exports GIF/WebM timelines.
 >
-> The Compose deployment uses two pinned GHCR images and one persistent volume. It sends no product telemetry. v0.1.0 uses SQLite, supports one API replica, and leaves TLS, backups, monitoring, and retention to the operator.
+> The Compose deployment uses two pinned GHCR images and one persistent volume. The self-hosted application sends no product telemetry. v0.1.0 uses SQLite, supports one API replica, and leaves TLS, backups, monitoring, and retention to the operator.
 >
 > Project and install: https://arts-link.github.io/screenshot-a-day/
 > Public demo: https://screenshots.arts-link.com/
@@ -72,7 +72,7 @@ Tagline:
 
 Description:
 
-> Schedule cross-browser screenshots, compare what changed, and publish visual timelines while keeping the archive on infrastructure you control. Open source, Docker-first, and no product telemetry.
+> Schedule cross-browser screenshots, compare what changed, and publish visual timelines while keeping the archive on infrastructure you control. The application is open source, Docker-first, and contains no product telemetry.
 
 Maker comment:
 
