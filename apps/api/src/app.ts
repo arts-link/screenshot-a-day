@@ -18,7 +18,6 @@ import {
   publicationTargetUpdateSchema,
   runTriggerSchema,
   setupInputSchema,
-  type CaptureRecord,
   type WorkerJob,
 } from "@sad/contracts";
 import {
@@ -47,7 +46,6 @@ import type { AppConfig } from "./config.js";
 import {
   AppDatabase,
   type CaptureRow,
-  type ProjectRow,
   type PublicationJobRow,
   type PublicationTargetRow,
   type WebhookDeliveryRow,
@@ -55,6 +53,8 @@ import {
 } from "./database.js";
 import { ComparisonCapacityError, ComparisonService } from "./comparisons.js";
 import { ComparisonTooLargeError, compareImages, thumbnail } from "./images.js";
+import { registerMcpEndpoint } from "./mcp.js";
+import { captureDto, projectPublicationDto, publicProject } from "./presenters.js";
 import { startScheduler } from "./scheduler.js";
 import { LocalBlobStore, type BlobStore } from "./storage.js";
 import { startWebhookDispatcher } from "./webhooks.js";
@@ -134,26 +134,6 @@ export async function drainBlobDeletions(
   }
 }
 
-function captureDto(row: CaptureRow): CaptureRecord {
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    profileId: row.profile_id,
-    runId: row.run_id,
-    status: row.status,
-    capturedAt: row.captured_at,
-    finalUrl: row.final_url,
-    httpStatus: row.http_status,
-    width: row.width,
-    height: row.height,
-    sha256: row.sha256,
-    changePercent: row.change_percent,
-    imageUrl: row.image_key ? `/api/v1/captures/${row.id}/image` : null,
-    thumbnailUrl: row.thumbnail_key ? `/api/v1/captures/${row.id}/thumbnail` : null,
-    error: row.error,
-  };
-}
-
 function exportSummary(
   db: AppDatabase,
   profileId: string,
@@ -183,46 +163,6 @@ function exportSummary(
     updatedAt: job?.updated_at ?? exported?.updated_at ?? null,
     error: includeError && job?.status === "failed" ? job.error : null,
     downloadUrl: exported?.blob_key ? downloadUrl : null,
-  };
-}
-
-function publicProject(project: ProjectRow, db: AppDatabase) {
-  const profiles = db.listProfiles(project.id).map((profile) => ({
-    id: profile.id,
-    name: profile.name,
-    browser: profile.browser,
-    settings: JSON.parse(profile.settings_json),
-  }));
-  return {
-    id: project.id,
-    name: project.name,
-    slug: project.slug,
-    publishMode: project.publish_mode,
-    profiles,
-  };
-}
-
-function projectPublicationDto(project: ProjectRow, db: AppDatabase) {
-  const publication = db.getProjectPublication(project.id);
-  if (!publication) return null;
-  const target = db.getPublicationTarget(publication.target_id);
-  const latestJob = db.listPublicationJobs(publication.target_id, 1)[0];
-  return {
-    targetId: publication.target_id,
-    targetName: target?.name ?? "Unknown target",
-    targetAdapter: target?.adapter ?? "vercel",
-    url: publication.gallery_url,
-    state: publication.state,
-    pending: publication.state !== "active",
-    active: publication.state === "active" && project.publish_mode !== "private",
-    lastPublishedAt: publication.last_published_at,
-    lastSuccessfulRevision: publication.last_successful_revision,
-    lastError: publication.last_error,
-    removalWarning:
-      publication.state === "removal_pending" || publication.state === "removal_failed"
-        ? "Remote files may remain available until removal succeeds."
-        : null,
-    latestJob: latestJob ? publicationJobSummary(latestJob) : null,
   };
 }
 
@@ -406,7 +346,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
 
   app.addHook("onRequest", async (request, reply) => {
     if (!["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return;
-    if (request.url.startsWith("/internal/")) return;
+    if (request.url.startsWith("/internal/") || request.url.startsWith("/mcp")) return;
     const identity = authenticate(db, request);
     if (identity?.kind !== "session") return;
     const origin = request.headers.origin;
@@ -432,6 +372,8 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       reply.header("strict-transport-security", "max-age=31536000; includeSubDomains");
     return payload;
   });
+
+  const closeMcp = registerMcpEndpoint(app, { config, db });
 
   app.get("/health/live", async () => ({ status: "ok" }));
   app.get("/health/ready", async (_request, reply) => {
@@ -1698,6 +1640,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     stopPublications();
     clearInterval(deletionTimer);
     await deletionDrain;
+    await closeMcp();
     db.close();
   });
 

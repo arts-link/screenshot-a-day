@@ -61,6 +61,15 @@ importers:
       "@fastify/swagger-ui":
         specifier: ^6.1.1
         version: 6.1.1
+      "@modelcontextprotocol/fastify":
+        specifier: ^2.0.0
+        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(fastify@5.11.3)
+      "@modelcontextprotocol/node":
+        specifier: ^2.0.0
+        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.5)
+      "@modelcontextprotocol/server":
+        specifier: ^2.0.0
+        version: 2.0.0
       "@sad/contracts":
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -839,6 +848,15 @@ packages:
         integrity: sha512-VpHMnqZTY8iBZYJE8WWkbKPrXIYWy2rDfIf5qLr6DzZSpQYZ+KxQVcJFiq/AMlvNwI4gCBd66++iUlxXXGT0IQ==,
       }
 
+  "@hono/node-server@1.19.17":
+    resolution:
+      {
+        integrity: sha512-dSneS5qhiauZWGDCeK4o695Xd9nUNjviSZCMQrj10eetr8Uln1ucn6bbphOM6UynAMMtNIzZNSpL9vnASJwrPQ==,
+      }
+    engines: { node: ">=18.14.1" }
+    peerDependencies:
+      hono: ^4
+
   "@humanfs/core@0.19.2":
     resolution:
       {
@@ -1178,6 +1196,43 @@ packages:
       {
         integrity: sha512-fo+QhuU3qE/2TQMQmbVMqaQ6EWbMhi4ABWP+O4AM1NqPBuy0OrApV5LO6BrrgnhtAHS2NH6RrVk9OL181tTi8A==,
       }
+
+  "@modelcontextprotocol/core@2.0.0":
+    resolution:
+      {
+        integrity: sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA==,
+      }
+    engines: { node: ">=20" }
+
+  "@modelcontextprotocol/fastify@2.0.0":
+    resolution:
+      {
+        integrity: sha512-x41AmyQ+olgAjX8EBkVpCztxIcWaInUlVpEatUBSWINZAmTnQYSYqOp9eigb7dxE2W+CtzhP1H+9uUgHRxJPVg==,
+      }
+    engines: { node: ">=20" }
+    peerDependencies:
+      "@modelcontextprotocol/server": ^2.0.0
+      fastify: ^5.2.0
+
+  "@modelcontextprotocol/node@2.0.0":
+    resolution:
+      {
+        integrity: sha512-Y4hAC2XdGDUdDOCbLDOCA4+aL3NUldjsOWlDL/YwpAxrPhRm1xHd7lZ+mLacvZ9t3PaH28wgNoaLQGrIk1P2pg==,
+      }
+    engines: { node: ">=20" }
+    peerDependencies:
+      "@modelcontextprotocol/server": ^2.0.0
+      hono: ^4.11.4
+    peerDependenciesMeta:
+      hono:
+        optional: true
+
+  "@modelcontextprotocol/server@2.0.0":
+    resolution:
+      {
+        integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==,
+      }
+    engines: { node: ">=20" }
 
   "@nodelib/fs.scandir@2.1.5":
     resolution:
@@ -2704,6 +2759,13 @@ packages:
       {
         integrity: sha512-6pEjquH3rqaI6cYAXYPcz9MS4rY6R4ngRgrgfDshRptUZIc3lw0MCIJIGDj9++mfySOuPTHB4nrSW99BCvOPIA==,
       }
+
+  hono@4.13.5:
+    resolution:
+      {
+        integrity: sha512-O6+/eCYRkzzzy0rPWwKLiGBR1nFuUPZynnwjxN1MBA62NNqbT0wQEzQyK2gSO5yDIDB336sXQleAhOHrzlYyKw==,
+      }
+    engines: { node: ">=16.9.0" }
 
   http-errors@2.0.1:
     resolution:
@@ -4739,6 +4801,10 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  "@hono/node-server@1.19.17(hono@4.13.5)":
+    dependencies:
+      hono: 4.13.5
+
   "@humanfs/core@0.19.2":
     dependencies:
       "@humanfs/types": 0.15.0
@@ -4904,6 +4970,27 @@ snapshots:
       fs-extra: 8.1.0
       globby: 11.1.0
       read-yaml-file: 1.1.0
+
+  "@modelcontextprotocol/core@2.0.0":
+    dependencies:
+      zod: 4.4.3
+
+  "@modelcontextprotocol/fastify@2.0.0(@modelcontextprotocol/server@2.0.0)(fastify@5.11.3)":
+    dependencies:
+      "@modelcontextprotocol/server": 2.0.0
+      fastify: 5.11.3
+
+  "@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.5)":
+    dependencies:
+      "@hono/node-server": 1.19.17(hono@4.13.5)
+      "@modelcontextprotocol/server": 2.0.0
+    optionalDependencies:
+      hono: 4.13.5
+
+  "@modelcontextprotocol/server@2.0.0":
+    dependencies:
+      "@modelcontextprotocol/core": 2.0.0
+      zod: 4.4.3
 
   "@nodelib/fs.scandir@2.1.5":
     dependencies:
@@ -5831,6 +5918,8 @@ snapshots:
   hermes-parser@0.25.1:
     dependencies:
       hermes-estree: 0.25.1
+
+  hono@4.13.5: {}
 
   http-errors@2.0.1:
     dependencies:

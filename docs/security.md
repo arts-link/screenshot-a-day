@@ -6,6 +6,7 @@ Screenshot-a-Day is a privileged browser automation service. Deploy it behind HT
 - Passwords use Argon2id. Sessions are HTTP-only, SameSite=Lax, and secure when `SAD_PUBLIC_URL` is HTTPS.
 - Browser-origin state changes reject mismatched origins. Login, recovery, and comparison endpoints are rate-limited.
 - API tokens are SHA-256 hashes at rest, shown once, scoped, and optionally project-limited.
+- The experimental MCP endpoint accepts API bearer tokens only, never administrator cookies. It preserves token scopes and project limits, validates Host against `SAD_PUBLIC_URL`, and rejects a mismatched browser Origin while allowing non-browser clients that omit Origin.
 - Target headers, cookies, and webhook signing secrets use AES-256-GCM envelopes.
 - Structured logs redact authorization, cookies, passwords, and target secret fields.
 - URL credentials are rejected. DNS answers, redirects, and subresources are checked against the private-network policy.
@@ -18,6 +19,8 @@ Screenshot-a-Day is a privileged browser automation service. Deploy it behind HT
 - An SFTP root must be empty or contain a matching Screenshot-a-Day marker. Cleanup considers only paths recorded in the previous successful managed manifest and preserves unknown files.
 
 The worker executes untrusted web content in Playwright's browser sandbox inside its container. Do not mount host directories, the Docker socket, or the API data volume into it. The default worker has no direct database access.
+
+Treat remote MCP access like REST automation access: expose it only behind HTTPS, grant the smallest scopes and project set needed, and revoke its API token when a client is retired. v0.1 uses manually configured bearer tokens and does not publish OAuth discovery metadata.
 
 v0.1.0 does not retain Playwright traces or response bodies. A best-effort final screenshot may be stored on the third failed attempt, so target pages themselves must be treated as sensitive data.
 

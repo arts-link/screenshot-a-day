@@ -1717,6 +1717,63 @@ input[type="range"] {
   text-transform: uppercase;
 }
 
+.mcp-access-note {
+  margin: 28px 0;
+  padding: 18px;
+  display: grid;
+  gap: 14px;
+  border: 1px solid rgb(var(--color-lime) / 35%);
+  background: rgb(var(--color-lime) / 4%);
+}
+
+.mcp-access-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mcp-access-head strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.mcp-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mcp-endpoint > code {
+  min-width: 0;
+  padding: 10px 12px;
+  flex: 1;
+  overflow-wrap: anywhere;
+  color: var(--text-accent);
+  background: var(--border-hairline);
+  font-size: 12px;
+  line-height: 1.5;
+  user-select: all;
+}
+
+.mcp-access-note > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.mcp-access-note > p code {
+  color: var(--text-primary);
+}
+
+.mcp-access-note > a {
+  color: var(--text-accent);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
 .token-list {
   margin-top: 24px;
   display: grid;
@@ -2429,12 +2486,22 @@ input[type="range"] {
   }
 
   .token-reveal-head,
-  .token-reveal-value {
+  .token-reveal-value,
+  .mcp-access-head,
+  .mcp-endpoint {
     align-items: stretch;
     flex-direction: column;
   }
 
   .token-reveal-head .button {
+    align-self: flex-start;
+  }
+
+  .mcp-access-head {
+    align-items: flex-start;
+  }
+
+  .mcp-endpoint .button {
     align-self: flex-start;
   }
 }
