@@ -16,13 +16,16 @@ describe("source runtime policy", () => {
   });
 
   it("keeps package-manager and version-manager policy aligned", async () => {
-    const [manifestBody, mise, nodeVersion, nvm, npmrc] = await Promise.all([
-      readFile(new URL("package.json", root), "utf8"),
-      readFile(new URL(".mise.toml", root), "utf8"),
-      readFile(new URL(".node-version", root), "utf8"),
-      readFile(new URL(".nvmrc", root), "utf8"),
-      readFile(new URL(".npmrc", root), "utf8"),
-    ]);
+    const [manifestBody, mise, nodeVersion, nvm, npmrc, apiDockerfile, workerDockerfile] =
+      await Promise.all([
+        readFile(new URL("package.json", root), "utf8"),
+        readFile(new URL(".mise.toml", root), "utf8"),
+        readFile(new URL(".node-version", root), "utf8"),
+        readFile(new URL(".nvmrc", root), "utf8"),
+        readFile(new URL(".npmrc", root), "utf8"),
+        readFile(new URL("Dockerfile.api", root), "utf8"),
+        readFile(new URL("Dockerfile.worker", root), "utf8"),
+      ]);
     const manifest = JSON.parse(manifestBody);
 
     expect(manifest.engines.node).toBe(">=24.0.0 <25.0.0");
@@ -32,5 +35,9 @@ describe("source runtime policy", () => {
     expect(nodeVersion.trim()).toBe("24");
     expect(nvm.trim()).toBe("24");
     expect(npmrc.trim()).toBe("engine-strict=true");
+    for (const dockerfile of [apiDockerfile, workerDockerfile]) {
+      expect(dockerfile).toContain("COPY .npmrc ./");
+      expect(dockerfile).toContain("COPY scripts/check-runtime.mjs scripts/check-runtime.mjs");
+    }
   });
 });
