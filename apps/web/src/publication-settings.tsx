@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, type PublicationTarget } from "./api";
 import {
@@ -14,31 +14,13 @@ import {
   Status,
 } from "./components";
 import {
-  formatPublicationElapsed,
   publicationJobInFlight,
   publicationTargetActionLabel,
   publicationTargetStatus,
   publicationVerificationStatus,
   type PublicationVerificationFeedback,
 } from "./publication-status";
-
-const PUBLICATION_PHASES = ["queued", "building", "deploying"] as const;
-
-function usePublicationElapsed(startedAt: string | number | undefined, active: boolean): string {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  useEffect(() => {
-    if (!active || startedAt === undefined) return;
-    const start = typeof startedAt === "number" ? startedAt : Date.parse(startedAt);
-    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - start) / 1000)));
-    const initial = window.setTimeout(update, 0);
-    const timer = window.setInterval(update, 1000);
-    return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(timer);
-    };
-  }, [active, startedAt]);
-  return formatPublicationElapsed(elapsedSeconds);
-}
+import { PUBLICATION_PHASES, usePublicationElapsed } from "./publication-progress";
 
 function TargetCard({
   target,

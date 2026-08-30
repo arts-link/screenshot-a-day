@@ -1023,10 +1023,9 @@ legend {
   font-size: 14px;
 }
 
-.publication-live-status {
+.project-publication-progress,
+.project-publication-result {
   margin-top: 24px;
-  color: var(--text-muted);
-  font-size: 13px;
 }
 
 .destination-url {
