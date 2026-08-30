@@ -68,13 +68,23 @@ Version 0.1 uses SQLite and a local persistent volume, supports one API replica,
 
 ## Development
 
-Requirements: Node.js 24 and pnpm 11.
+Source development and CI target Node.js 24 LTS and pnpm 11. Docker users do not need
+Node.js or pnpm on the host. The repository includes configuration for mise, nvm, and
+tools that read `.node-version`; use one of them instead of changing your global Node.js.
 
 ```sh
+mise trust
+mise install
+mise exec -- zsh
 pnpm install
 pnpm check
 pnpm dev
 ```
+
+Review `.mise.toml` before running `mise trust`. With nvm, run `nvm install` followed by
+`nvm use` instead. If this checkout was already used with another Node.js major, rebuild
+the ABI-specific SQLite addon with
+`pnpm --filter @sad/api rebuild better-sqlite3` before running the checks.
 
 Architecture and contributor details live in the [development guide](docs/development.md). The REST API serves interactive OpenAPI documentation at `/docs/api`; MCP is documented separately in the [API and MCP reference](docs/api/README.md).
 

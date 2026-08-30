@@ -2,6 +2,11 @@
 
 Thank you for improving Screenshot-a-Day.
 
+Source development uses Node 24 LTS. After reviewing `.mise.toml`, select the repository
+runtime with `mise trust`, `mise install`, and `mise exec -- zsh`, or with `nvm install`
+and `nvm use`; see the
+[development guide](docs/development.md) for native dependency recovery.
+
 1. Open or comment on an issue before making a broad architectural change.
 2. Create a focused branch and use Conventional Commit messages.
 3. Add or update tests and documentation in the same change.

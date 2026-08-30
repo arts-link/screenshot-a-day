@@ -85,7 +85,9 @@ gh api "repos/$SAD_RELEASE_REPO/private-vulnerability-reporting"
 Use Node.js 24 and pnpm 11. Run the same paths as CI from the clean merged commit.
 
 ```sh
+pnpm runtime:check
 pnpm install --frozen-lockfile
+pnpm --filter @sad/api rebuild better-sqlite3
 pnpm --filter @sad/worker exec playwright install chromium firefox webkit
 pnpm check
 pnpm build
