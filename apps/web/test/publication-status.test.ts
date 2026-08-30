@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PublicationTarget, StaticPublication } from "../src/api";
 import {
   formatPublicationElapsed,
+  projectPublicationActionLabel,
   publicationInFlight,
   publicationStatus,
   publicationTargetActionLabel,
@@ -75,23 +76,49 @@ describe("publication status", () => {
     });
   });
 
-  it("keeps polling and reports each publishing phase", () => {
+  it.each([
+    ["queued", "Publication queued", "Queued…"],
+    ["building", "Building static gallery", "Building…"],
+    ["deploying", "Deploying to Gallery host", "Deploying…"],
+  ] as const)("keeps polling and describes the %s phase", (phase, headline, actionLabel) => {
     const publication = fixture({
       latestJob: {
         id: "job-1",
         operation: "publish",
-        status: "deploying",
+        status: phase,
         error: null,
         createdAt: "2026-08-26T00:00:00.000Z",
         updatedAt: "2026-08-26T00:00:01.000Z",
       },
     });
+    const status = publicationStatus(publication, "indexable");
     expect(publicationInFlight(publication)).toBe(true);
-    expect(publicationStatus(publication, "indexable")).toMatchObject({
-      busy: true,
-      value: "deploying",
-      message: "Deploying to Gallery host",
+    expect(status).toMatchObject({ busy: true, value: phase, headline });
+    expect(projectPublicationActionLabel(false, status)).toBe(actionLabel);
+  });
+
+  it("keeps a publication failure visible and offers a retry", () => {
+    const status = publicationStatus(
+      fixture({
+        active: false,
+        state: "failed",
+        latestJob: {
+          id: "job-2",
+          operation: "publish",
+          status: "failed",
+          error: "Destination timed out",
+          createdAt: "2026-08-26T00:00:00.000Z",
+          updatedAt: "2026-08-26T00:05:00.000Z",
+        },
+      }),
+      "indexable",
+    );
+    expect(status).toMatchObject({
+      value: "failed",
+      headline: "Static publication failed",
+      detail: "Destination timed out",
     });
+    expect(projectPublicationActionLabel(false, status)).toBe("Retry publish →");
   });
 
   it("uses removal copy for pending and failed cleanup", () => {

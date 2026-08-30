@@ -146,6 +146,39 @@ async function seedExport(projectId, profileId, format, captureIds) {
   db.saveExport(job, key, captureIds.length);
 }
 
+function seedPublicationTarget(projectId) {
+  const target = db.createPublicationTarget(
+    {
+      name: "E2E static host",
+      baseUrl: "https://history.example.com",
+      scheduleMode: "manual",
+      scheduleExpression: null,
+      scheduleTimezone: "UTC",
+      branding: {
+        title: "E2E visual history",
+        description: "",
+        logoText: null,
+        logoUrl: null,
+        tagline: "",
+        accentColor: "#dbff53",
+        backgroundColor: "#10151d",
+        darkMode: true,
+        supplementalFooter: "",
+        analytics: { provider: "none" },
+      },
+      target: {
+        adapter: "vercel",
+        config: { projectId: "e2e-static-host", teamId: null },
+        credentials: { token: "unused-e2e-token" },
+      },
+    },
+    "unused-e2e-encrypted-credentials",
+    null,
+  );
+  db.attachProjectToTarget(projectId, target.id);
+  return target;
+}
+
 let browser;
 try {
   const indexable = await createProject("E2E indexable", "e2e-indexable", "indexable");
@@ -167,6 +200,7 @@ try {
       viewportHeight: 844,
     },
   });
+  seedPublicationTarget(indexable.id);
   const unlisted = await createProject("E2E unlisted", "e2e-unlisted", "unlisted");
   await seedCapture(unlisted.id, unlisted.profiles[0].id, 0);
 
@@ -244,6 +278,14 @@ try {
     "Delete project",
   ])
     await page.getByRole("heading", { name: heading }).waitFor();
+  await page.getByRole("status").filter({ hasText: "Publication queued" }).waitFor();
+  await page.getByText("You can leave this page; progress is saved.").waitFor();
+  assert.deepEqual(await page.locator(".target-publication-steps span").allTextContents(), [
+    "queued",
+    "building",
+    "deploying",
+  ]);
+  await page.getByRole("button", { name: "Queued…" }).waitFor();
   await page.getByRole("button", { name: `Delete ${indexable.name}` }).click();
   await page.getByRole("dialog").waitFor();
   await page.getByRole("button", { name: "Cancel" }).click();

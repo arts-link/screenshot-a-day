@@ -29,7 +29,12 @@ import {
   Spinner,
   Status,
 } from "./components";
-import { publicationInFlight, publicationStatus } from "./publication-status";
+import {
+  projectPublicationActionLabel,
+  publicationInFlight,
+  publicationStatus,
+} from "./publication-status";
+import { PUBLICATION_PHASES, usePublicationElapsed } from "./publication-progress";
 import { PublicationSettings } from "./publication-settings";
 import {
   CAPTURES_PER_PAGE,
@@ -943,6 +948,64 @@ function ProjectComparePage() {
   );
 }
 
+function ProjectPublicationProgress({
+  status,
+  startedAt,
+  queueing,
+}: {
+  status: ReturnType<typeof publicationStatus> | null;
+  startedAt: string | number | undefined;
+  queueing?: "attach" | "publish" | undefined;
+}) {
+  const active = Boolean(queueing || status?.busy);
+  const elapsed = usePublicationElapsed(startedAt, active);
+  const phase =
+    status?.busy && PUBLICATION_PHASES.includes(status.value as (typeof PUBLICATION_PHASES)[number])
+      ? (status.value as (typeof PUBLICATION_PHASES)[number])
+      : "queued";
+  const activePhase = PUBLICATION_PHASES.indexOf(phase);
+  const headline =
+    queueing === "attach"
+      ? "Attaching destination"
+      : queueing === "publish"
+        ? "Queueing publication"
+        : status?.headline;
+  const detail =
+    queueing === "attach"
+      ? "Linking this project to the destination and starting its first publication."
+      : queueing === "publish"
+        ? "Sending this publication to the queue."
+        : status?.detail;
+  return (
+    <div
+      className="target-publication-progress project-publication-progress"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="target-publication-progress-head">
+        <span>
+          <Spinner />
+          <strong>{headline}</strong>
+        </span>
+        <span>{elapsed}</span>
+      </div>
+      <div className="target-publication-steps" aria-label="Publication progress">
+        {PUBLICATION_PHASES.map((candidate, index) => (
+          <span
+            key={candidate}
+            className={index < activePhase ? "complete" : index === activePhase ? "active" : ""}
+          >
+            {candidate}
+          </span>
+        ))}
+      </div>
+      <p>
+        {detail} <strong>You can leave this page; progress is saved.</strong>
+      </p>
+    </div>
+  );
+}
+
 function ProjectConfigurationPage() {
   const { id = "" } = useParams();
   const client = useQueryClient();
@@ -988,6 +1051,14 @@ function ProjectConfigurationPage() {
     ? publicationStatus(p.staticPublication, p.publishMode)
     : null;
   const publicationBusy = Boolean(publicationAction || staticStatus?.busy);
+  const publishing = Boolean(
+    publicationAction === "publish" ||
+    (staticStatus?.busy && p.staticPublication?.latestJob?.operation === "publish"),
+  );
+  const publicationElapsedFrom =
+    staticStatus?.busy && p.staticPublication?.latestJob
+      ? p.staticPublication.latestJob.createdAt
+      : undefined;
   return (
     <>
       <ProjectHeader project={p} />
@@ -1063,7 +1134,7 @@ function ProjectConfigurationPage() {
             </>
           )}
         </div>
-        <div className="publishing-destination">
+        <div className="publishing-destination" aria-busy={publicationBusy}>
           <div className="destination-head">
             <div>
               <span className="destination-label">Static destination</span>
@@ -1087,12 +1158,27 @@ function ProjectConfigurationPage() {
           </div>
           {p.staticPublication ? (
             <>
-              <div className="publication-live-status" role="status" aria-live="polite">
-                {staticStatus?.busy && <Spinner />}
-                <span>
-                  <strong>{staticStatus?.message}</strong>
-                </span>
-              </div>
+              {publicationAction === "publish" || staticStatus?.busy ? (
+                <ProjectPublicationProgress
+                  status={staticStatus}
+                  startedAt={publicationElapsedFrom}
+                  queueing={publicationAction === "publish" ? "publish" : undefined}
+                />
+              ) : (
+                <div
+                  className={`target-publication-result project-publication-result${staticStatus?.value === "failed" ? " failed" : ""}`}
+                  role={staticStatus?.value === "failed" ? "alert" : "status"}
+                  aria-live="polite"
+                >
+                  <strong>{staticStatus?.headline}</strong>
+                  <span>
+                    {staticStatus?.detail}
+                    {p.staticPublication.lastPublishedAt && staticStatus?.value === "active"
+                      ? ` Completed ${new Date(p.staticPublication.lastPublishedAt).toLocaleString()}.`
+                      : ""}
+                  </span>
+                </div>
+              )}
               <a
                 className="destination-url"
                 href={p.staticPublication.url}
@@ -1101,9 +1187,6 @@ function ProjectConfigurationPage() {
               >
                 {p.staticPublication.url} ↗
               </a>
-              {p.staticPublication.lastError && (
-                <ErrorNotice error={new Error(p.staticPublication.lastError)} />
-              )}
               <div className="publishing-actions">
                 <Button
                   variant="secondary"
@@ -1114,8 +1197,11 @@ function ProjectConfigurationPage() {
                     )
                   }
                 >
-                  {publicationAction === "publish" && <Spinner />}
-                  Publish now →
+                  {publishing && <Spinner />}
+                  {projectPublicationActionLabel(
+                    publicationAction === "publish",
+                    publishing ? staticStatus : null,
+                  )}
                 </Button>
                 <Link
                   className="button button-secondary"
@@ -1173,8 +1259,15 @@ function ProjectConfigurationPage() {
               </Field>
               <Button type="submit" disabled={publicationBusy}>
                 {publicationAction === "attach" && <Spinner />}
-                Attach and publish →
+                {publicationAction === "attach" ? "Attaching…" : "Attach and publish →"}
               </Button>
+              {publicationAction === "attach" && (
+                <ProjectPublicationProgress
+                  status={null}
+                  startedAt={publicationElapsedFrom}
+                  queueing="attach"
+                />
+              )}
             </form>
           ) : (
             <div className="destination-empty">
