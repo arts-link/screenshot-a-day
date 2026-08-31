@@ -14,7 +14,12 @@ import {
 } from "react-router-dom";
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
 import { api, type Comparison, type ExportArtifact, type ProjectDetail, type Webhook } from "./api";
-import { activeCaptureRun, captureActionDetail, captureActionLabel } from "./capture-action";
+import {
+  activeCaptureRun,
+  captureActionDetail,
+  captureActionLabel,
+  triggerCaptureRequest,
+} from "./capture-action";
 import { projectGalleryUrl } from "./gallery-url";
 import {
   AccentRule,
@@ -807,10 +812,14 @@ function ProjectComparePage() {
   const pageCount = Math.max(1, Math.ceil(successfulCount / CAPTURES_PER_PAGE));
   const visible = successful;
   const requestCapture = () => {
-    if (captureLock.current || captureBusy) return;
-    captureLock.current = true;
-    setError(undefined);
-    trigger.mutate(crypto.randomUUID());
+    try {
+      triggerCaptureRequest(captureLock, captureBusy, (idempotencyKey) => {
+        setError(undefined);
+        trigger.mutate(idempotencyKey);
+      });
+    } catch (caught) {
+      setError(caught);
+    }
   };
   const changeProfile = (nextProfileId: string) => {
     setProfileId(nextProfileId);

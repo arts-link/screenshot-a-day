@@ -7,6 +7,39 @@ export interface CaptureRun {
   capture_job_count: number;
 }
 
+interface CaptureRandomSource {
+  randomUUID?: () => string;
+  getRandomValues(array: Uint8Array): Uint8Array;
+}
+
+interface CaptureLock {
+  current: boolean;
+}
+
+export function captureIdempotencyKey(source: CaptureRandomSource = crypto): string {
+  if (typeof source.randomUUID === "function") return source.randomUUID();
+  return Array.from(source.getRandomValues(new Uint8Array(16)), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
+export function triggerCaptureRequest(
+  lock: CaptureLock,
+  busy: boolean,
+  mutate: (idempotencyKey: string) => void,
+  createKey: () => string = captureIdempotencyKey,
+): boolean {
+  if (lock.current || busy) return false;
+  lock.current = true;
+  try {
+    mutate(createKey());
+    return true;
+  } catch (error) {
+    lock.current = false;
+    throw error;
+  }
+}
+
 export function activeCaptureRun(runs: CaptureRun[] | undefined): CaptureRun | undefined {
   return runs?.find(
     (run) => run.capture_job_count > 0 && (run.status === "queued" || run.status === "running"),
