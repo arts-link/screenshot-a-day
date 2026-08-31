@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@sad/contracts": "workspace:*",
-    "cron-parser": "^5.4.0",
+    "cron-parser": "^5.10.0",
     "ipaddr.js": "^2.2.0",
     "zod": "^4.1.12"
   }
