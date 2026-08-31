@@ -240,6 +240,14 @@ try {
 
   await page.goto(`${baseUrl}/projects/${indexable.id}/compare`);
   await page.getByRole("heading", { name: "Compare two captures" }).waitFor();
+  await page.evaluate(() =>
+    Object.defineProperty(globalThis.crypto, "randomUUID", {
+      configurable: true,
+      value: undefined,
+    }),
+  );
+  await page.getByRole("button", { name: /Capture now/ }).click();
+  await page.getByRole("button", { name: /Capture queued/ }).waitFor();
   assert.equal(
     await page.getByRole("link", { name: "Open gallery" }).getAttribute("href"),
     `${baseUrl}/p/e2e-indexable`,
@@ -372,7 +380,7 @@ try {
 
   assert.deepEqual(browserErrors, []);
   console.log(
-    "Playwright smoke passed: admin, API tokens, public, unlisted, mobile, and static cross-page selection.",
+    "Playwright smoke passed: insecure-context capture fallback, admin, API tokens, public, unlisted, mobile, and static cross-page selection.",
   );
 } finally {
   await browser?.close();

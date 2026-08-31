@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   activeCaptureRun,
+  captureIdempotencyKey,
   captureActionDetail,
   captureActionLabel,
+  triggerCaptureRequest,
   type CaptureRun,
 } from "../src/capture-action";
 
@@ -35,5 +37,44 @@ describe("capture action feedback", () => {
     const completed = run({ status: "succeeded", succeeded_count: 3 });
     expect(captureActionLabel(false, completed)).toBe("Capture complete");
     expect(captureActionDetail(false, completed)).toBe("3 screenshots added.");
+  });
+});
+
+describe("capture request safety", () => {
+  it("uses randomUUID when the browser provides it", () => {
+    expect(
+      captureIdempotencyKey({
+        randomUUID: () => "browser-uuid",
+        getRandomValues: () => {
+          throw new Error("fallback should not run");
+        },
+      }),
+    ).toBe("browser-uuid");
+  });
+
+  it("creates a random idempotency key when randomUUID is unavailable", () => {
+    expect(
+      captureIdempotencyKey({
+        getRandomValues: (bytes) => {
+          bytes.fill(0xab);
+          return bytes;
+        },
+      }),
+    ).toBe("ab".repeat(16));
+  });
+
+  it("releases the capture lock after a synchronous failure", () => {
+    const lock = { current: false };
+    expect(() =>
+      triggerCaptureRequest(
+        lock,
+        false,
+        () => undefined,
+        () => {
+          throw new Error("random source unavailable");
+        },
+      ),
+    ).toThrow("random source unavailable");
+    expect(lock.current).toBe(false);
   });
 });
