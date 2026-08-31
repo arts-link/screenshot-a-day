@@ -12,7 +12,7 @@ describe("source runtime policy", () => {
   });
 
   it("rejects an untested newer Node major with recovery guidance", () => {
-    expect(() => validateRuntime("26.7.0")).toThrow(/Node\.js 24 LTS.*mise trust.*nvm/);
+    expect(() => validateRuntime("26.7.0")).toThrow(/Node\.js 24 LTS.*mise.*nvm.*corepack/);
   });
 
   it("keeps package-manager and version-manager policy aligned", async () => {
@@ -30,8 +30,9 @@ describe("source runtime policy", () => {
 
     expect(manifest.engines.node).toBe(">=24.0.0 <25.0.0");
     expect(manifest.engines.pnpm).toBe(">=11.16.0 <12.0.0");
+    expect(manifest.packageManager).toBe("pnpm@11.16.0");
     expect(mise).toContain('node = "24"');
-    expect(mise).toContain('pnpm = "11.16.0"');
+    expect(mise).not.toContain("pnpm");
     expect(nodeVersion.trim()).toBe("24");
     expect(nvm.trim()).toBe("24");
     expect(npmrc.trim()).toBe("engine-strict=true");

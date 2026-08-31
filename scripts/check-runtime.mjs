@@ -7,7 +7,7 @@ export function validateRuntime(version) {
   if (major !== supportedNodeMajor) {
     throw new Error(
       `Screenshot-a-Day source development requires Node.js ${supportedNodeMajor} LTS; found ${version}. ` +
-        "After reviewing `.mise.toml`, run `mise trust && mise install && mise exec -- zsh`, or use `nvm install && nvm use`; then reinstall or rebuild native dependencies.",
+        "After reviewing `.mise.toml`, use mise or nvm to select Node 24, run `corepack enable`, then reinstall or rebuild native dependencies.",
     );
   }
 }
