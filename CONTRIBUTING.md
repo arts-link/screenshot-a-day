@@ -3,8 +3,8 @@
 Thank you for improving Screenshot-a-Day.
 
 Source development uses Node 24 LTS. After reviewing `.mise.toml`, select the repository
-runtime with `mise trust`, `mise install`, and `mise exec -- zsh`, or with `nvm install`
-and `nvm use`; see the
+runtime with `mise trust`, `mise install`, `mise exec -- corepack enable`, and
+`mise exec -- zsh`, or with `nvm install`, `nvm use`, and `corepack enable`; see the
 [development guide](docs/development.md) for native dependency recovery.
 
 1. Open or comment on an issue before making a broad architectural change.

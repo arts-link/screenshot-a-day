@@ -2,22 +2,24 @@
 
 Source development, CI, and release builds use Node 24 LTS and the pnpm version declared
 in `package.json`. Docker deployments do not require a host Node.js installation. The
-root `.mise.toml`, `.nvmrc`, and `.node-version` select the supported runtime without
-changing a developer's global default.
+root `.mise.toml`, `.nvmrc`, and `.node-version` select the supported Node.js runtime
+without changing a developer's global default. Corepack reads `packageManager` from
+`package.json` and activates the exact pnpm release.
 
 With mise:
 
 ```sh
 mise trust
 mise install
+mise exec -- corepack enable
 mise exec -- zsh
 node --version
 pnpm --version
 ```
 
-Review the two-line `.mise.toml` before trusting it. With nvm, run `nvm install` and
-`nvm use`. The runtime guard intentionally stops source commands on an untested Node.js
-major instead of allowing a later native-addon failure.
+Review the two-line `.mise.toml` before trusting it. With nvm, run `nvm install`,
+`nvm use`, and `corepack enable`. The runtime guard intentionally stops source commands
+on an untested Node.js major instead of allowing a later native-addon failure.
 
 ```sh
 pnpm install
