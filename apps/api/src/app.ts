@@ -496,7 +496,12 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     return reply.code(201).send({
       ...publicProject(project, db),
       shareToken: project.share_token,
+      scheduleExpression: project.schedule_expression,
+      scheduleTimezone: project.schedule_timezone,
       scheduleEnabled: Boolean(project.schedule_enabled),
+      nextRunAt: project.next_run_at,
+      retentionDays: project.retention_days,
+      retentionCount: project.retention_count,
       staticPublication: null,
     });
   });
@@ -511,6 +516,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       scheduleExpression: project.schedule_expression,
       scheduleTimezone: project.schedule_timezone,
       scheduleEnabled: Boolean(project.schedule_enabled),
+      nextRunAt: project.next_run_at,
       retentionDays: project.retention_days,
       retentionCount: project.retention_count,
       staticPublication: projectPublicationDto(project, db),
@@ -565,6 +571,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       scheduleExpression: updated!.schedule_expression,
       scheduleTimezone: updated!.schedule_timezone,
       scheduleEnabled: Boolean(updated!.schedule_enabled),
+      nextRunAt: updated!.next_run_at,
       retentionDays: updated!.retention_days,
       retentionCount: updated!.retention_count,
       staticPublication: projectPublicationDto(updated!, db),

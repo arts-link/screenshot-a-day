@@ -1194,6 +1194,10 @@ describe("control plane", () => {
       payload: { scheduleEnabled: true, confirmUntestedProfiles: true },
     });
     expect(confirmedSchedule.statusCode).toBe(200);
+    expect(confirmedSchedule.json()).toMatchObject({
+      scheduleEnabled: true,
+      nextRunAt: expect.any(String),
+    });
 
     await app.inject({
       method: "POST",

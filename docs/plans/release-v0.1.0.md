@@ -151,6 +151,8 @@ Complete every scenario without console errors:
 
 Follow [the backup guide](../guides/backups.md) exactly. The encryption key and `/data` volume are one recovery unit.
 
+The guarded `pnpm release:restore-rehearsal` command in that guide automates the stopped copy, isolated restore, ownership repair, readiness, integrity, retained-image digest, and fresh three-browser evidence. Keep its JSON evidence file with the release notes; the operator still performs login and the new batch in the restored UI.
+
 - [ ] Stop writes and take a documented backup of the populated release-candidate volume.
 - [ ] Restore it into a clean volume with the original `SAD_ENCRYPTION_KEY`.
 - [ ] Normalize restored `/data` ownership before startup.

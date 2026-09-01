@@ -40,3 +40,26 @@ docker compose --project-name screenshot-a-day-restore start worker
 If the integrity check does not print `ok`, stop and keep both the backup and old volume unchanged. After a successful check, sign in and verify an old full-size image, an old thumbnail, comparison history, and one new capture in each enabled browser profile. Retain the previous volume until those checks pass.
 
 The restore rehearsal uses the separate `screenshot-a-day-restore` Compose project and therefore a separate empty named volume. Keep the prior project and volume until the restored installation passes every check. For a permanent replacement, either retain the restored Compose project name or copy the verified data into the normal project's empty volume during a final stopped maintenance window.
+
+## Guarded release rehearsal
+
+From the checkout whose Compose images will receive the restored data, the release helper automates the stopped backup, isolated restore, ownership normalization, readiness check, SQLite integrity check, and retained-PNG digest check. It then waits while you sign in and run one fresh batch containing enabled Chromium, Firefox, and WebKit profiles. It writes a timestamped JSON evidence file without reading or recording secret values.
+
+Load the source deployment's `.env` values into the shell first. The custody reference must name where the original encryption key is stored, never the key itself. Both the backup directory and restore Compose project must be new, and the restore port must be unused.
+
+```sh
+pnpm release:restore-rehearsal -- \
+  --source-project screenshot-a-day-v010-rc2 \
+  --restore-project screenshot-a-day-v010-final-restore \
+  --source-port 4400 \
+  --restore-port 4401 \
+  --restore-url http://your-server:4401 \
+  --backup-dir /srv/backups/screenshot-a-day-v010-rc2-YYYYMMDD \
+  --source-sha "$RC2_SHA" \
+  --expected-sha "$SAD_RELEASE_SHA" \
+  --key-custody-reference "Password manager item: Screenshot-a-Day production"
+```
+
+The source API and worker stop only for the copy and are restarted even if copying fails. The command refuses an existing restore container or named volume, a port collision, a broad or existing backup path, matching source/restore names, and an unexpected source or restored `/version` commit. It never deletes the source volume or backup. By default it also retains the successful restore deployment for inspection; pass `--cleanup` only when you want the successfully verified disposable restore project and its volume removed.
+
+Use `--skip-capture` only to finish the automated half while leaving the fresh three-browser result explicitly pending in the evidence. It cannot be combined with `--cleanup`.

@@ -123,7 +123,10 @@ async function seedCapture(projectId, profileId, index, status = "succeeded") {
     image_key: imageKey,
     thumbnail_key: thumbnailKey,
     diff_key: null,
-    error: status === "failed" ? "e2e failure" : null,
+    error:
+      status === "failed"
+        ? 'Readiness selector "#missing-release-marker" was not visible within 1,000 ms.'
+        : null,
     duration_ms: 5,
   });
 }
@@ -256,6 +259,13 @@ try {
   assert.equal(await page.locator(".capture-card").count(), 12);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /13 comparable captures/i);
   assert.match(await page.locator(".capture-browser-meta").innerText(), /1 failed attempt/i);
+  await page.getByText("Review 1 failed attempt", { exact: true }).click();
+  await page
+    .getByText('Readiness selector "#missing-release-marker" was not visible within 1,000 ms.', {
+      exact: true,
+    })
+    .waitFor();
+  await page.getByText("Terminal failure after retries", { exact: true }).waitFor();
   await page.getByText("Generate / update", { exact: true }).click();
   await page.getByRole("button", { name: "Regenerate GIF" }).waitFor();
   await page.getByRole("link", { name: "Download GIF" }).waitFor();
@@ -311,6 +321,27 @@ try {
     "deploying",
   ]);
   await page.getByRole("button", { name: "Queued…" }).waitFor();
+  assert.match(
+    await page.getByRole("status").filter({ hasText: "Automatic scheduled captures" }).innerText(),
+    /Disabled/,
+  );
+  await page.route(`**/api/v1/projects/${indexable.id}`, async (route) => {
+    if (route.request().method() === "PATCH")
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    await route.continue();
+  });
+  await page.getByLabel("Enable automatic scheduled captures").check();
+  await page.getByLabel("Explicitly allow scheduling untested profiles").check();
+  await page.getByRole("button", { name: "Save policy" }).click();
+  await page.getByRole("button", { name: "Saving…" }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Saving…" }).isDisabled(), true);
+  await page.getByText("Capture policy saved.", { exact: true }).waitFor();
+  assert.match(
+    await page.getByRole("status").filter({ hasText: "Automatic scheduled captures" }).innerText(),
+    /Enabled[\s\S]*Next capture[\s\S]*UTC/,
+  );
+  await page.getByText(/Each enabled profile must complete a successful capture/).waitFor();
+  await page.unroute(`**/api/v1/projects/${indexable.id}`);
   await page.getByRole("button", { name: `Delete ${indexable.name}` }).click();
   await page.getByRole("dialog").waitFor();
   await page.getByRole("button", { name: "Cancel" }).click();

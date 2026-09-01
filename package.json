@@ -22,6 +22,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:e2e": "pnpm runtime:check && node scripts/e2e-smoke.mjs",
+    "release:restore-rehearsal": "node scripts/rehearse-restore.mjs",
     "test:watch": "vitest",
     "typecheck": "pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm -r typecheck",
     "version:check": "node scripts/check-version.mjs",
