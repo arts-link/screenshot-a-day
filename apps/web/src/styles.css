@@ -1494,6 +1494,116 @@ input[type="range"] {
   gap: 8px;
 }
 
+.capture-failures {
+  margin: -20px 0 40px;
+  border: 1px solid rgb(var(--color-ember) / 35%);
+}
+
+.capture-failures > summary {
+  padding: 14px 16px;
+  cursor: pointer;
+  color: rgb(var(--color-ember-light));
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.capture-failure-list {
+  border-top: 1px solid rgb(var(--color-ember) / 25%);
+}
+
+.capture-failure-list article {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.4fr) minmax(0, 1fr);
+  gap: 24px;
+}
+
+.capture-failure-list article + article {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.capture-failure-list article > div,
+.capture-failure-loading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.capture-failure-list strong,
+.capture-failure-list time,
+.capture-failure-list span {
+  font-size: 12px;
+}
+
+.capture-failure-list time,
+.capture-failure-list span {
+  color: var(--text-muted);
+}
+
+.capture-failure-list p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-body);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.capture-failure-loading {
+  padding: 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.schedule-state {
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 20px;
+}
+
+.schedule-state > span {
+  color: var(--text-body);
+  font-size: 13px;
+}
+
+.schedule-state > strong {
+  color: var(--text-accent);
+  font-size: 13px;
+}
+
+.schedule-state > small {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+}
+
+.schedule-enable-control {
+  font-weight: 700;
+}
+
+.schedule-help {
+  margin-top: -10px;
+}
+
+.policy-save-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.policy-save-feedback {
+  min-height: 44px;
+  flex: 1;
+}
+
+.policy-save-feedback .error-notice,
+.policy-save-feedback .success-notice {
+  margin: 0;
+}
+
 .capture-pagination {
   padding: 32px 0;
   display: flex;
@@ -2497,6 +2607,15 @@ input[type="range"] {
   .diff-result,
   .comparison-tray {
     grid-template-columns: 1fr;
+  }
+
+  .capture-failure-list article {
+    grid-template-columns: 1fr;
+  }
+
+  .policy-save-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .compare-slot {

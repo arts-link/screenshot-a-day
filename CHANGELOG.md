@@ -21,6 +21,9 @@ All notable changes to Screenshot-a-Day are documented here. The project follows
 - Webhooks can be paused, edited, tested, rotated, inspected, and deleted from Configuration.
 - Comparisons now enforce successful same-profile inputs, bounded resources, rate limits, and short-lived caching.
 - Static publication targets now use clear unpublished-state copy, persistent connection-verification results, and live queued, building, and deploying progress with elapsed time.
+- Schedule policy saves now show pending and saved feedback in place, make the persisted enabled state unmistakable, and display the next capture time.
+- Administrator capture history now exposes recent terminal failures with safe stage-specific reasons such as selector, navigation, and connection failures.
+- Release operators can run a guarded backup/restore rehearsal that records readiness, SQLite integrity, retained-image digest, and a fresh three-browser batch without deleting the source volume.
 
 ### Database
 

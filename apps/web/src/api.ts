@@ -17,6 +17,7 @@ export interface ProjectDetail extends ProjectSummary {
   publishMode: "private" | "unlisted" | "indexable";
   scheduleExpression: string;
   scheduleTimezone: string;
+  nextRunAt: string | null;
   retentionDays: number | null;
   retentionCount: number | null;
   staticPublication: StaticPublication | null;
@@ -151,6 +152,34 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function capturePage(
+  id: string,
+  status: "succeeded" | "failed",
+  profileId?: string,
+  limit = 12,
+  offset = 0,
+): Promise<CapturePage> {
+  const query = new URLSearchParams({
+    status,
+    limit: String(limit),
+    offset: String(offset),
+  });
+  if (profileId) query.set("profileId", profileId);
+  const response = await fetch(`/api/v1/projects/${id}/captures?${query}`);
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({ error: `HTTP ${response.status}` }))) as {
+      error?: string;
+    };
+    throw new Error(body.error ?? `Request failed with HTTP ${response.status}`);
+  }
+  return {
+    captures: (await response.json()) as CaptureRecord[],
+    total: Number(response.headers.get("x-total-count") ?? 0),
+    successfulCount: Number(response.headers.get("x-successful-count") ?? 0),
+    failedCount: Number(response.headers.get("x-failed-count") ?? 0),
+  };
+}
+
 export const api = {
   setupStatus: () => request<{ configured: boolean }>("/api/v1/setup/status"),
   setup: (input: { token: string; email: string; password: string }) =>
@@ -164,27 +193,10 @@ export const api = {
   project: (id: string) => request<ProjectDetail>(`/api/v1/projects/${id}`),
   createProject: (input: unknown) =>
     request<ProjectDetail>("/api/v1/projects", { method: "POST", body: JSON.stringify(input) }),
-  captures: async (id: string, profileId?: string, limit = 12, offset = 0) => {
-    const query = new URLSearchParams({
-      status: "succeeded",
-      limit: String(limit),
-      offset: String(offset),
-    });
-    if (profileId) query.set("profileId", profileId);
-    const response = await fetch(`/api/v1/projects/${id}/captures?${query}`);
-    if (!response.ok) {
-      const body = (await response.json().catch(() => ({ error: `HTTP ${response.status}` }))) as {
-        error?: string;
-      };
-      throw new Error(body.error ?? `Request failed with HTTP ${response.status}`);
-    }
-    return {
-      captures: (await response.json()) as CaptureRecord[],
-      total: Number(response.headers.get("x-total-count") ?? 0),
-      successfulCount: Number(response.headers.get("x-successful-count") ?? 0),
-      failedCount: Number(response.headers.get("x-failed-count") ?? 0),
-    } satisfies CapturePage;
-  },
+  captures: (id: string, profileId?: string, limit = 12, offset = 0) =>
+    capturePage(id, "succeeded", profileId, limit, offset),
+  failedCaptures: (id: string, profileId?: string, limit = 5, offset = 0) =>
+    capturePage(id, "failed", profileId, limit, offset),
   runs: (id: string) => request<CaptureRun[]>(`/api/v1/projects/${id}/runs`),
   trigger: (id: string, idempotencyKey: string) =>
     request<{ runId: string }>(`/api/v1/projects/${id}/runs`, {

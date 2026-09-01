@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { headersForCaptureRequest } from "../src/capture.js";
+import { captureFailureMessage, headersForCaptureRequest } from "../src/capture.js";
 
 describe("capture request headers", () => {
   const browserHeaders = {
@@ -46,5 +46,35 @@ describe("capture request headers", () => {
         { Authorization: "Bearer capture-secret" },
       ),
     ).toEqual({ authorization: "Bearer capture-secret" });
+  });
+});
+
+describe("capture failure messages", () => {
+  const profile = { waitForSelector: "#ready", timeoutMs: 30_000 };
+
+  it("explains readiness selector timeouts", () => {
+    expect(
+      captureFailureMessage(new Error("Timeout 30000ms exceeded"), "readiness selector", profile),
+    ).toBe('Readiness selector "#ready" was not visible within 30,000 ms.');
+  });
+
+  it("turns common navigation failures into actionable reasons", () => {
+    expect(
+      captureFailureMessage(
+        new Error("page.goto: net::ERR_NAME_NOT_RESOLVED at https://bad.test/?token=secret"),
+        "navigation",
+        profile,
+      ),
+    ).toBe("Navigation failed because the target hostname could not be resolved.");
+  });
+
+  it("redacts query strings from safe stage details", () => {
+    expect(
+      captureFailureMessage(
+        new Error("unexpected response from https://example.com/private?token=secret"),
+        "result upload",
+        profile,
+      ),
+    ).toBe("Result upload failed: unexpected response from https://example.com/private");
   });
 });

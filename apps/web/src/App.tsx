@@ -762,6 +762,12 @@ function ProjectComparePage() {
     enabled: Boolean(activeProfile),
     refetchInterval: 5000,
   });
+  const failedCaptures = useQuery({
+    queryKey: ["failed-captures", id, activeProfile?.id],
+    queryFn: () => api.failedCaptures(id, activeProfile!.id),
+    enabled: Boolean(activeProfile && (captures.data?.failedCount ?? 0) > 0),
+    refetchInterval: 5000,
+  });
   const runs = useQuery({
     queryKey: ["runs", id],
     queryFn: () => api.runs(id),
@@ -847,7 +853,7 @@ function ProjectComparePage() {
           </div>
         }
       />
-      <ErrorNotice error={error ?? captures.error ?? runs.error} />
+      <ErrorNotice error={error ?? captures.error ?? failedCaptures.error ?? runs.error} />
       {activeProfile ? (
         <section className="comparison-workspace">
           <div className="workspace-toolbar">
@@ -898,6 +904,33 @@ function ProjectComparePage() {
               )}
             </div>
           </div>
+          {failedCount > 0 && (
+            <details className="capture-failures">
+              <summary>
+                Review {failedCount} failed {failedCount === 1 ? "attempt" : "attempts"}
+              </summary>
+              <div className="capture-failure-list">
+                {failedCaptures.isLoading ? (
+                  <span className="capture-failure-loading">
+                    <Spinner /> Loading failure details…
+                  </span>
+                ) : (
+                  failedCaptures.data?.captures.map((capture) => (
+                    <article key={capture.id}>
+                      <div>
+                        <strong>Terminal failure after retries</strong>
+                        <time dateTime={capture.capturedAt}>
+                          {new Date(capture.capturedAt).toLocaleString()}
+                        </time>
+                        {capture.httpStatus ? <span>HTTP {capture.httpStatus}</span> : null}
+                      </div>
+                      <p>{capture.error ?? "Capture failed without a reported reason."}</p>
+                    </article>
+                  ))
+                )}
+              </div>
+            </details>
+          )}
           {captures.isLoading ? (
             <div className="comparison-placeholder">
               <Spinner /> Loading captures…
@@ -1949,27 +1982,54 @@ function ProjectControls({
 }) {
   const [error, setError] = useState<unknown>();
   const [notice, setNotice] = useState<string>();
+  const [policyError, setPolicyError] = useState<unknown>();
+  const [policyNotice, setPolicyNotice] = useState<string>();
+  const [savingPolicy, setSavingPolicy] = useState(false);
+  const policySaveLock = useRef(false);
   const [scheduleExpression, setScheduleExpression] = useState(project.scheduleExpression);
+  const [savedScheduleExpression, setSavedScheduleExpression] = useState(
+    project.scheduleExpression,
+  );
+  const [scheduleTimezone, setScheduleTimezone] = useState(project.scheduleTimezone);
+  const [savedScheduleTimezone, setSavedScheduleTimezone] = useState(project.scheduleTimezone);
+  const [scheduleEnabled, setScheduleEnabled] = useState(project.scheduleEnabled);
+  const [savedScheduleEnabled, setSavedScheduleEnabled] = useState(project.scheduleEnabled);
+  const [nextRunAt, setNextRunAt] = useState(project.nextRunAt);
   const hooks = useQuery({
     queryKey: ["webhooks", project.id],
     queryFn: () => api.webhooks(project.id),
   });
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (policySaveLock.current) return;
+    policySaveLock.current = true;
+    setSavingPolicy(true);
+    setPolicyError(undefined);
+    setPolicyNotice(undefined);
     const data = new FormData(event.currentTarget);
     try {
-      await api.updateProject(project.id, {
+      const updated = await api.updateProject(project.id, {
         scheduleExpression,
-        scheduleTimezone: String(data.get("scheduleTimezone")),
-        scheduleEnabled: data.get("scheduleEnabled") === "on",
+        scheduleTimezone,
+        scheduleEnabled,
         confirmUntestedProfiles: data.get("confirmUntestedProfiles") === "on",
         retentionDays: data.get("retentionDays") ? Number(data.get("retentionDays")) : null,
         retentionCount: data.get("retentionCount") ? Number(data.get("retentionCount")) : null,
       });
-      setNotice("Project policy saved.");
+      setScheduleExpression(updated.scheduleExpression);
+      setSavedScheduleExpression(updated.scheduleExpression);
+      setScheduleTimezone(updated.scheduleTimezone);
+      setSavedScheduleTimezone(updated.scheduleTimezone);
+      setScheduleEnabled(updated.scheduleEnabled);
+      setSavedScheduleEnabled(updated.scheduleEnabled);
+      setNextRunAt(updated.nextRunAt);
+      setPolicyNotice("Capture policy saved.");
       onChanged();
     } catch (caught) {
-      setError(caught);
+      setPolicyError(caught);
+    } finally {
+      policySaveLock.current = false;
+      setSavingPolicy(false);
     }
   };
   const addWebhook = async (event: FormEvent<HTMLFormElement>) => {
@@ -2044,7 +2104,11 @@ function ProjectControls({
               />
             </Field>
             <Field label="Timezone">
-              <input name="scheduleTimezone" defaultValue={project.scheduleTimezone} />
+              <input
+                name="scheduleTimezone"
+                value={scheduleTimezone}
+                onChange={(event) => setScheduleTimezone(event.target.value)}
+              />
             </Field>
             <div className="form-row">
               <Field label="Retention period (days)">
@@ -2064,19 +2128,51 @@ function ProjectControls({
                 />
               </Field>
             </div>
-            <label className="check-line">
+            <div className="schedule-state" role="status" aria-live="polite">
+              <span>Automatic scheduled captures</span>
+              <strong>{savedScheduleEnabled ? "Enabled" : "Disabled"}</strong>
+              {savedScheduleEnabled && nextRunAt ? (
+                <small>
+                  Next capture {new Date(nextRunAt).toLocaleString()} ({savedScheduleTimezone})
+                </small>
+              ) : null}
+              {scheduleEnabled !== savedScheduleEnabled ||
+              scheduleExpression !== savedScheduleExpression ||
+              scheduleTimezone !== savedScheduleTimezone ? (
+                <small>Unsaved schedule changes will take effect after you save this policy.</small>
+              ) : null}
+            </div>
+            <label className="check-line schedule-enable-control">
               <input
                 name="scheduleEnabled"
                 type="checkbox"
-                defaultChecked={project.scheduleEnabled}
+                checked={scheduleEnabled}
+                onChange={(event) => setScheduleEnabled(event.target.checked)}
               />
-              Enable schedule after every profile has succeeded
+              Enable automatic scheduled captures
             </label>
+            <p className="form-help schedule-help">
+              Each enabled profile must complete a successful capture before scheduling can be
+              enabled.
+            </p>
             <label className="check-line">
               <input name="confirmUntestedProfiles" type="checkbox" />
               Explicitly allow scheduling untested profiles
             </label>
-            <Button type="submit">Save policy</Button>
+            <div className="policy-save-actions">
+              <Button type="submit" disabled={savingPolicy} aria-busy={savingPolicy}>
+                {savingPolicy && <Spinner />}
+                {savingPolicy ? "Saving…" : "Save policy"}
+              </Button>
+              <div className="policy-save-feedback" aria-live="polite">
+                {policyError ? <ErrorNotice error={policyError} /> : null}
+                {policyNotice ? (
+                  <div className="success-notice" role="status">
+                    {policyNotice}
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </form>
         </div>
       </section>
