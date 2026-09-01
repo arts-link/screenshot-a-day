@@ -6,22 +6,22 @@ This is the operator runbook for the first official Screenshot-a-Day release. Ru
 
 Complete this block before starting:
 
-| Field                                       | Value    |
-| ------------------------------------------- | -------- |
-| Release owner                               |          |
-| Release window                              |          |
-| Version                                     | `0.1.0`  |
-| Tag                                         | `v0.1.0` |
-| Final release pull request                  |          |
-| Release-candidate commit (record at freeze) |          |
-| Merged `main` commit                        |          |
-| Tag object ID                               |          |
-| Release workflow                            |          |
-| API digest                                  |          |
-| Worker digest                               |          |
-| GitHub Release                              |          |
-| Demo deployment revision                    |          |
-| Pages deployment revision                   |          |
+| Field                                       | Value                                                        |
+| ------------------------------------------- | ------------------------------------------------------------ |
+| Release owner                               |                                                              |
+| Release window                              |                                                              |
+| Version                                     | `0.1.0`                                                      |
+| Tag                                         | `v0.1.0`                                                     |
+| Final release pull request                  | [#29](https://github.com/arts-link/screenshot-a-day/pull/29) |
+| Release-candidate commit (record at freeze) |                                                              |
+| Merged `main` commit                        |                                                              |
+| Tag object ID                               |                                                              |
+| Release workflow                            |                                                              |
+| API digest                                  |                                                              |
+| Worker digest                               |                                                              |
+| GitHub Release                              |                                                              |
+| Demo deployment revision                    |                                                              |
+| Pages deployment revision                   |                                                              |
 
 Set these shell variables once per terminal. Recheck `SAD_RELEASE_SHA` after merging; do not copy the pull-request SHA into the tag command.
 
@@ -29,12 +29,14 @@ Set these shell variables once per terminal. Recheck `SAD_RELEASE_SHA` after mer
 export SAD_RELEASE_VERSION=0.1.0
 export SAD_RELEASE_TAG=v0.1.0
 export SAD_RELEASE_REPO=arts-link/screenshot-a-day
-export SAD_RELEASE_PR=REPLACE_WITH_FINAL_PR_NUMBER
+export SAD_RELEASE_PR=29
 ```
 
 ## 1. Merge gate
 
 PR [#9](https://github.com/arts-link/screenshot-a-day/pull/9) merged the application release candidate after green DCO, `validate`, `container-smoke`, and CodeQL checks at source head `6d28e67` on 2026-08-30. Treat that as historical evidence, not permission to skip fresh checks on the final release pull request.
+
+PR [#29](https://github.com/arts-link/screenshot-a-day/pull/29) is the sole final v0.1 release-candidate pull request. It contains the comparison-view work originally reviewed in now-superseded PR [#24](https://github.com/arts-link/screenshot-a-day/pull/24) plus the schedule feedback, capture-failure diagnostics, guarded restore rehearsal, documentation, and acceptance coverage added afterward. Record and validate #29's current head; earlier green runs on either constituent commit are historical after any new commit is pushed.
 
 - [ ] Set `SAD_RELEASE_PR` to the final open release pull request, then record its number and head commit in the release record.
 - [ ] Review every commit added since the last green evidence.
@@ -107,16 +109,18 @@ docker compose config --quiet
 
 Build locally from the exact release SHA. Use disposable secrets and a new named volume; do not reuse the demo or development database.
 
-### Pre-tag comparison-patch evidence checkpoint
+### Pre-tag combined release-candidate evidence checkpoint
 
 Manual evidence collected from RC2 commit `be6d66a` remains historical evidence for the unchanged scheduler, retention, export, webhook, API-token, and MCP subsystems. Record that SHA beside every reused result; it does not replace final-SHA automated validation.
 
-After the comparison-view pull request changes the final release SHA:
+After PR #29 merges and changes the final release SHA:
 
 - Repeat Sections 1–3 in full and build fresh containers from the new `origin/main` tip.
 - Repeat login, readiness, `/version`, one Chromium/Firefox/WebKit batch, every administrator and built-in-public comparison mode, portable static side-by-side and split comparison, comparison selection across pages, republishing, mobile layout, keyboard navigation, and browser-console checks.
-- Restore the preserved RC2 backup under the final-SHA images with the original encryption key. Record `PRAGMA integrity_check`, an old retained-image digest, successful login, and a fresh three-browser batch. Because the patch changes no database, storage, API, or worker behavior, this cross-SHA restore is the final-image restore rehearsal; do not repeat backup creation.
-- Do not tag until the final-SHA checks above and the focused pull request's CI are green. Post-tag clean-machine testing remains mandatory.
+- Verify schedule policy save pending/success/error feedback, persisted Enabled/Disabled state, prerequisite wording, and next-run time. Trigger a safe failed capture and verify its administrator-only terminal failure reason is actionable and contains no secret values.
+- Restore RC2 data under the final-SHA images with the original encryption key. Record `PRAGMA integrity_check`, an old retained-image digest, successful login, and a fresh three-browser batch. PR #29 changes API response presentation and worker failure reporting, but not the database schema, migrations, blob layout, encryption format, or successful-capture storage path; this cross-SHA restore is the final-image restore evidence.
+- Prefer one guarded `pnpm release:restore-rehearsal` execution after the final-SHA images exist, using the RC2 deployment and SHA as the source and the merged final SHA as the expected restore SHA. That execution creates the preserved backup and final-image restore together. If a preserved RC2 backup already exists, use the backup guide's manual isolated-restore path rather than overwriting or reusing its directory.
+- Do not tag until the final-SHA checks above and PR #29's current-head CI are green. Post-tag clean-machine testing remains mandatory.
 
 ```sh
 export SAD_BUILD_COMMIT="$SAD_RELEASE_SHA"
