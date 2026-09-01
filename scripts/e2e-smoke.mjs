@@ -203,6 +203,7 @@ try {
   seedPublicationTarget(indexable.id);
   const unlisted = await createProject("E2E unlisted", "e2e-unlisted", "unlisted");
   await seedCapture(unlisted.id, unlisted.profiles[0].id, 0);
+  await seedCapture(unlisted.id, unlisted.profiles[0].id, 1);
 
   await app.listen({ host: "127.0.0.1", port });
   browser = await chromium.launch({ headless: true });
@@ -261,6 +262,22 @@ try {
   await page.locator(".capture-card button").nth(1).click();
   await page.locator(".capture-card button").nth(0).click();
   await page.locator(".comparison-result").waitFor();
+  assert.equal(
+    await page
+      .getByRole("button", { name: "Side by side", exact: true })
+      .getAttribute("aria-pressed"),
+    "true",
+  );
+  assert.equal(await page.locator('[data-comparison-view="side-by-side"] figure').count(), 2);
+  await page.getByRole("button", { name: "Split", exact: true }).click();
+  const adminSplit = page.getByRole("slider", { name: "Comparison split" });
+  await adminSplit.press("ArrowRight");
+  assert.equal(await adminSplit.inputValue(), "51");
+  assert.match((await page.locator(".split-frame-later").getAttribute("style")) ?? "", /49%/);
+  await page.getByRole("button", { name: "Overlay", exact: true }).click();
+  await page.getByRole("slider", { name: "Overlay opacity" }).waitFor();
+  await page.getByRole("button", { name: "Heatmap", exact: true }).click();
+  await page.getByRole("img", { name: "Pixel difference heatmap" }).waitFor();
   await page.getByRole("button", { name: /Older/ }).click();
   await page.locator(".capture-card").waitFor();
   assert.equal(await page.locator(".capture-card").count(), 1);
@@ -321,12 +338,20 @@ try {
     assert.match((await link.getAttribute("class")) ?? "", /button-secondary/);
   }
   assert.equal(await page.locator(".public-frame").count(), 12);
+  await page.locator(".public-frame button").nth(1).click();
+  await page.locator(".public-frame button").nth(0).click();
+  await page.locator('[data-comparison-view="side-by-side"]').waitFor();
+  await page.getByRole("button", { name: "Split", exact: true }).click();
+  await page.getByRole("slider", { name: "Comparison split" }).waitFor();
   await page.getByRole("button", { name: /Older/ }).click();
   await page.locator(".public-frame").first().waitFor();
   assert.equal(await page.locator(".public-frame").count(), 1);
 
   await page.goto(`${baseUrl}/s/${unlisted.shareToken}`);
   await page.getByRole("heading", { name: "E2E unlisted" }).waitFor();
+  await page.locator(".public-frame button").nth(1).click();
+  await page.locator(".public-frame button").nth(0).click();
+  await page.getByRole("button", { name: "Side by side", exact: true }).waitFor();
   await page.getByRole("button", { name: "GIF unavailable" }).waitFor();
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -339,6 +364,15 @@ try {
     .waitFor();
   await page.goto(`${baseUrl}/projects/${indexable.id}/compare`);
   await page.getByRole("heading", { name: "Compare two captures" }).waitFor();
+  await page.locator(".capture-card button").nth(1).click();
+  await page.locator(".capture-card button").nth(0).click();
+  await page.locator('[data-comparison-view="side-by-side"]').waitFor();
+  assert.equal(
+    await page.evaluate(
+      () => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth,
+    ),
+    true,
+  );
   await page.goto(`${baseUrl}/p/e2e-indexable`);
   await page.getByRole("heading", { name: "E2E indexable" }).waitFor();
 
@@ -346,12 +380,18 @@ try {
     new URL("../apps/api/static-gallery/assets/gallery.js", import.meta.url),
     "utf8",
   );
+  const galleryStyles = await readFile(
+    new URL("../apps/api/static-gallery/assets/gallery.css", import.meta.url),
+    "utf8",
+  );
   const staticMarkup = (id, date) => `
     <section data-comparison-workspace data-comparison-scope="e2e:profile">
       <div data-slot="earlier"><span data-slot-value></span><button data-slot-change="earlier"></button><button data-slot-remove="earlier"></button></div>
       <div data-slot="later"><span data-slot-value></span><button data-slot-change="later"></button><button data-slot-remove="later"></button></div>
+      <div class="comparison-modes"><button class="active" aria-pressed="true" data-comparison-mode="side-by-side">Side by side</button><button aria-pressed="false" data-comparison-mode="split">Split</button></div>
       <div data-comparison-empty></div>
-      <div data-split-result hidden><img data-before><span><img data-after></span><input type="range"></div>
+      <div class="side-by-side-result" data-side-by-side-result hidden><figure><img data-side-before><figcaption><span data-side-before-date></span></figcaption></figure><figure><img data-side-after><figcaption><span data-side-after-date></span></figcaption></figure></div>
+      <div class="split-result" data-split-result hidden><div class="split-frame"><img data-before><div class="split-frame-later" data-split-later><img data-after></div><span class="split-divider" data-split-divider></span></div><label class="split-control"><span>Comparison split</span><input type="range" min="0" max="100" value="50"><output>50% later</output></label></div>
     </section>
     <article data-capture-card data-capture-id="${id}"><button data-compare-id="${id}" data-compare-image="/${id}.png" data-compare-date="${date}"></button></article>`;
   await page.goto(`${baseUrl}/health/live`);
@@ -369,14 +409,27 @@ try {
     ),
   );
   await page.setContent(staticMarkup("later", "2026-01-02T00:00:00.000Z"));
+  await page.addStyleTag({ content: galleryStyles });
   await page.addScriptTag({ content: galleryScript });
   await page.locator("[data-compare-id=later]").click();
   await page.waitForFunction(() => {
-    const result = globalThis.document.querySelector("[data-split-result]");
+    const result = globalThis.document.querySelector("[data-side-by-side-result]");
     return result instanceof globalThis.HTMLElement && !result.hidden;
   });
-  assert.match(await page.locator("[data-before]").getAttribute("src"), /earlier\.png$/);
-  assert.match(await page.locator("[data-after]").getAttribute("src"), /later\.png$/);
+  assert.match(await page.locator("[data-side-before]").getAttribute("src"), /earlier\.png$/);
+  assert.match(await page.locator("[data-side-after]").getAttribute("src"), /later\.png$/);
+  await page.locator('[data-comparison-mode="split"]').click();
+  await page.locator("[data-split-result]").waitFor();
+  const staticSplit = page.getByRole("slider", { name: "Comparison split" });
+  await staticSplit.press("ArrowRight");
+  assert.equal(await staticSplit.inputValue(), "51");
+  assert.match((await page.locator("[data-split-later]").getAttribute("style")) ?? "", /49%/);
+  assert.equal(
+    await page.evaluate(
+      () => globalThis.document.documentElement.scrollWidth <= globalThis.innerWidth,
+    ),
+    true,
+  );
 
   assert.deepEqual(browserErrors, []);
   console.log(

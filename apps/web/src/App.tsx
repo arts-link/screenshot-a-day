@@ -1397,36 +1397,115 @@ function ProjectConfigurationPage() {
   );
 }
 
+type ComparisonView = "side-by-side" | "split" | "overlay" | "heatmap";
+
+const COMPARISON_VIEWS: Array<{ value: ComparisonView; label: string }> = [
+  { value: "side-by-side", label: "Side by side" },
+  { value: "split", label: "Split" },
+  { value: "overlay", label: "Overlay" },
+  { value: "heatmap", label: "Heatmap" },
+];
+
 function ComparisonResult({ comparison }: { comparison: Comparison }) {
+  const [view, setView] = useState<ComparisonView>("side-by-side");
+  const [split, setSplit] = useState(50);
   const [opacity, setOpacity] = useState(50);
+  const earlierDate = new Date(comparison.first.capturedAt).toLocaleString();
+  const laterDate = new Date(comparison.second.capturedAt).toLocaleString();
   return (
     <div className="comparison-result">
-      <div className="overlay-frame">
-        <img src={comparison.first.imageUrl ?? ""} alt="Earlier capture" />
-        <img
-          src={comparison.second.imageUrl ?? ""}
-          alt="Later capture overlay"
-          style={{ opacity: opacity / 100 }}
-        />
+      <div className="segmented comparison-modes" role="group" aria-label="Comparison view">
+        {COMPARISON_VIEWS.map((candidate) => (
+          <button
+            type="button"
+            key={candidate.value}
+            className={view === candidate.value ? "active" : ""}
+            aria-pressed={view === candidate.value}
+            onClick={() => setView(candidate.value)}
+          >
+            {candidate.label}
+          </button>
+        ))}
       </div>
-      <label className="opacity-control">
-        <span>Overlay opacity</span>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={opacity}
-          onChange={(event) => setOpacity(Number(event.target.value))}
-        />
-        <output>{opacity}%</output>
-      </label>
-      <div className="diff-result">
-        <img src={comparison.diffDataUrl} alt="Pixel difference heatmap" />
-        <div>
-          <strong>{comparison.changePercent.toFixed(4)}%</strong>
-          <span>{comparison.exactMatch ? "Exact match" : "of pixels changed"}</span>
+
+      {view === "side-by-side" && (
+        <div className="side-by-side" data-comparison-view="side-by-side">
+          <figure>
+            <img
+              src={comparison.first.imageUrl ?? ""}
+              alt={`Earlier capture from ${earlierDate}`}
+            />
+            <figcaption>
+              <strong>Earlier</strong>
+              <span>{earlierDate}</span>
+            </figcaption>
+          </figure>
+          <figure>
+            <img src={comparison.second.imageUrl ?? ""} alt={`Later capture from ${laterDate}`} />
+            <figcaption>
+              <strong>Later</strong>
+              <span>{laterDate}</span>
+            </figcaption>
+          </figure>
         </div>
-      </div>
+      )}
+
+      {view === "split" && (
+        <div className="comparison-view" data-comparison-view="split">
+          <div className="split-frame">
+            <img src={comparison.first.imageUrl ?? ""} alt="Earlier capture" />
+            <div className="split-frame-later" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}>
+              <img src={comparison.second.imageUrl ?? ""} alt="Later capture" />
+            </div>
+            <span className="split-divider" style={{ left: `${split}%` }} aria-hidden="true" />
+          </div>
+          <label className="comparison-control">
+            <span>Comparison split</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={split}
+              onChange={(event) => setSplit(Number(event.target.value))}
+            />
+            <output>{split}% later</output>
+          </label>
+        </div>
+      )}
+
+      {view === "overlay" && (
+        <div className="comparison-view" data-comparison-view="overlay">
+          <div className="overlay-frame">
+            <img src={comparison.first.imageUrl ?? ""} alt="Earlier capture" />
+            <img
+              src={comparison.second.imageUrl ?? ""}
+              alt="Later capture overlay"
+              style={{ opacity: opacity / 100 }}
+            />
+          </div>
+          <label className="comparison-control">
+            <span>Overlay opacity</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={opacity}
+              onChange={(event) => setOpacity(Number(event.target.value))}
+            />
+            <output>{opacity}% later</output>
+          </label>
+        </div>
+      )}
+
+      {view === "heatmap" && (
+        <div className="diff-result" data-comparison-view="heatmap">
+          <img src={comparison.diffDataUrl} alt="Pixel difference heatmap" />
+          <div>
+            <strong>{comparison.changePercent.toFixed(4)}%</strong>
+            <span>{comparison.exactMatch ? "Exact match" : "of pixels changed"}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

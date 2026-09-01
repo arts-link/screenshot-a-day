@@ -107,6 +107,17 @@ docker compose config --quiet
 
 Build locally from the exact release SHA. Use disposable secrets and a new named volume; do not reuse the demo or development database.
 
+### Pre-tag comparison-patch evidence checkpoint
+
+Manual evidence collected from RC2 commit `be6d66a` remains historical evidence for the unchanged scheduler, retention, export, webhook, API-token, and MCP subsystems. Record that SHA beside every reused result; it does not replace final-SHA automated validation.
+
+After the comparison-view pull request changes the final release SHA:
+
+- Repeat Sections 1–3 in full and build fresh containers from the new `origin/main` tip.
+- Repeat login, readiness, `/version`, one Chromium/Firefox/WebKit batch, every administrator and built-in-public comparison mode, portable static side-by-side and split comparison, comparison selection across pages, republishing, mobile layout, keyboard navigation, and browser-console checks.
+- Restore the preserved RC2 backup under the final-SHA images with the original encryption key. Record `PRAGMA integrity_check`, an old retained-image digest, successful login, and a fresh three-browser batch. Because the patch changes no database, storage, API, or worker behavior, this cross-SHA restore is the final-image restore rehearsal; do not repeat backup creation.
+- Do not tag until the final-SHA checks above and the focused pull request's CI are green. Post-tag clean-machine testing remains mandatory.
+
 ```sh
 export SAD_BUILD_COMMIT="$SAD_RELEASE_SHA"
 export SAD_ENCRYPTION_KEY="$(openssl rand -base64 32)"
@@ -128,7 +139,7 @@ Complete every scenario without console errors:
 - [ ] Verify profile-first pagination and comparison selection restoration across pages.
 - [ ] Exercise retention settings without removing protected or newly retained artifacts unexpectedly.
 - [ ] Publish private, unlisted, and indexable built-in galleries; rotate or remove sharing and recheck access.
-- [ ] Publish a portable static gallery, verify its destination URL, pagination, cross-page comparison restoration, headers, and republish status.
+- [ ] Publish a portable static gallery, verify its destination URL, side-by-side and split views, pagination, cross-page comparison restoration, headers, and republish status.
 - [ ] Generate and decode GIF and WebM timelines in chronological order.
 - [ ] Create, pause, test, rotate, resume, and delete a signed webhook; verify a real delivery signature.
 - [ ] Create scoped API tokens and exercise the documented REST API.

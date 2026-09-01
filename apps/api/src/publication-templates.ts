@@ -379,16 +379,27 @@ export function profilePage(site: SiteContext, gallery: Gallery, profile: Profil
   <p class="hero-intro">Page ${profile.page} of ${profile.pages}</p>
 </section>
 <section class="browser-compare" data-comparison-workspace data-comparison-scope="${h(`${gallery.id}:${profile.id}`)}">
-  <div class="section-heading"><p class="eyebrow">Browser-only split</p><span>Choose Earlier and Later</span></div>
+  <div class="section-heading"><p class="eyebrow">Browser comparison</p><span>Choose Earlier and Later</span></div>
   <div class="comparison-tray" aria-label="Comparison selection">
     <div class="compare-slot active" data-slot="earlier"><div><span>Earlier</span><strong data-slot-value>Choose the earlier frame</strong></div><div class="slot-actions"><button type="button" data-slot-change="earlier" hidden>Change</button><button type="button" data-slot-remove="earlier" hidden>Remove</button></div></div>
     <div class="compare-slot" data-slot="later"><div><span>Later</span><strong data-slot-value>Choose the later frame</strong></div><div class="slot-actions"><button type="button" data-slot-change="later" hidden>Change</button><button type="button" data-slot-remove="later" hidden>Remove</button></div></div>
   </div>
   <p class="comparison-empty" data-comparison-empty>Selections persist while you move between pages in this profile.</p>
+  <div class="comparison-modes" role="group" aria-label="Comparison view">
+    <button type="button" class="active" aria-pressed="true" data-comparison-mode="side-by-side">Side by side</button>
+    <button type="button" aria-pressed="false" data-comparison-mode="split">Split</button>
+  </div>
+  <div class="side-by-side-result" data-side-by-side-result hidden>
+    <figure><img data-side-before alt="Earlier selected screenshot" /><figcaption><strong>Earlier</strong><span data-side-before-date></span></figcaption></figure>
+    <figure><img data-side-after alt="Later selected screenshot" /><figcaption><strong>Later</strong><span data-side-after-date></span></figcaption></figure>
+  </div>
   <div class="split-result" data-split-result hidden>
-    <img data-before alt="First selected screenshot" /><span
-      ><img data-after alt="Second selected screenshot" /></span
-    ><input type="range" min="0" max="100" value="50" aria-label="Comparison split" />
+    <div class="split-frame">
+      <img data-before alt="Earlier selected screenshot" />
+      <div class="split-frame-later" data-split-later><img data-after alt="Later selected screenshot" /></div>
+      <span class="split-divider" data-split-divider aria-hidden="true"></span>
+    </div>
+    <label class="split-control"><span>Comparison split</span><input type="range" min="0" max="100" value="50" /><output>50% later</output></label>
   </div>
 </section>
 <section class="gallery-section">
