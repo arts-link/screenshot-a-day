@@ -44,8 +44,11 @@ if (workspace) {
     }
   }
 
+  const sideBySide = workspace.querySelector("[data-side-by-side-result]");
   const split = workspace.querySelector("[data-split-result]");
   const empty = workspace.querySelector("[data-comparison-empty]");
+  const modeButtons = workspace.querySelectorAll("[data-comparison-mode]");
+  let comparisonMode = "side-by-side";
   const persist = () => {
     if (!storage) return;
     try {
@@ -86,13 +89,27 @@ if (workspace) {
       button.textContent = role || "Select to compare";
       button.disabled = !role && !selection.active;
     });
-    const complete = selection.earlier && selection.later;
-    split.hidden = !complete;
+    const complete = Boolean(selection.earlier && selection.later);
+    sideBySide.hidden = !complete || comparisonMode !== "side-by-side";
+    split.hidden = !complete || comparisonMode !== "split";
     empty.hidden = Boolean(complete);
     if (complete) {
+      sideBySide.querySelector("[data-side-before]").src = selection.earlier.image;
+      sideBySide.querySelector("[data-side-after]").src = selection.later.image;
+      sideBySide.querySelector("[data-side-before-date]").textContent = new Date(
+        selection.earlier.date,
+      ).toLocaleString();
+      sideBySide.querySelector("[data-side-after-date]").textContent = new Date(
+        selection.later.date,
+      ).toLocaleString();
       split.querySelector("[data-before]").src = selection.earlier.image;
       split.querySelector("[data-after]").src = selection.later.image;
     }
+    modeButtons.forEach((button) => {
+      const active = button.dataset.comparisonMode === comparisonMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
     persist();
   };
 
@@ -133,8 +150,17 @@ if (workspace) {
       render();
     }),
   );
+  modeButtons.forEach((button) =>
+    button.addEventListener("click", () => {
+      comparisonMode = button.dataset.comparisonMode;
+      render();
+    }),
+  );
   split?.querySelector("input[type=range]")?.addEventListener("input", (event) => {
-    split.querySelector("span").style.width = `${event.target.value}%`;
+    const value = Number(event.target.value);
+    split.querySelector("[data-split-later]").style.clipPath = `inset(0 ${100 - value}% 0 0)`;
+    split.querySelector("[data-split-divider]").style.left = `${value}%`;
+    split.querySelector("output").textContent = `${value}% later`;
   });
   render();
 }

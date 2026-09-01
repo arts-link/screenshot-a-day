@@ -222,11 +222,15 @@ describe("static gallery publication renderer", () => {
         "utf8",
       );
       expect(profile.match(/data-capture-card/g)).toHaveLength(12);
-      expect(profile).toContain("Browser-only split");
+      expect(profile).toContain("Browser comparison");
       expect(profile).toContain("data-comparison-scope=");
       expect(profile).toContain('data-slot="earlier"');
       expect(profile).toContain('data-slot="later"');
       expect(profile).toContain("data-compare-id=");
+      expect(profile).toContain('data-comparison-mode="side-by-side"');
+      expect(profile).toContain('data-comparison-mode="split"');
+      expect(profile).toContain("data-side-by-side-result");
+      expect(profile).toContain("data-split-result");
       const secondPage = await readFile(
         join(first.directory, "p/studio-history/desktop/page/2/index.html"),
         "utf8",

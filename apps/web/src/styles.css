@@ -1619,22 +1619,73 @@ input[type="range"] {
   gap: 24px;
 }
 
+.comparison-modes {
+  justify-self: start;
+}
+
 .side-by-side {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .side-by-side figure {
   margin: 0;
+  min-width: 0;
+  background: var(--surface-well);
+}
+
+.side-by-side img,
+.split-frame > img,
+.split-frame-later img,
+.overlay-frame img,
+.diff-result > img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 .side-by-side figcaption {
-  margin-top: 8px;
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
+.side-by-side figcaption strong {
+  color: var(--text-strong);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.comparison-view {
+  display: grid;
+  gap: 18px;
+}
+
+.split-frame,
 .overlay-frame {
   position: relative;
+  overflow: hidden;
+  background: var(--surface-well);
+}
+
+.split-frame-later {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.split-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-accent);
+  box-shadow: 0 0 0 1px rgb(var(--color-ink) / 0.35);
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .overlay-frame img + img {
@@ -1642,12 +1693,19 @@ input[type="range"] {
   inset: 0;
 }
 
-.opacity-control {
+.comparison-control {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 16px;
   color: var(--text-body);
   font-size: 12px;
+}
+
+.comparison-control output {
+  min-width: 64px;
+  color: var(--text-muted);
+  text-align: right;
 }
 
 .diff-result {
@@ -2474,6 +2532,19 @@ input[type="range"] {
   .segmented button {
     flex: 1;
     padding-inline: 14px;
+  }
+
+  .comparison-modes {
+    justify-self: stretch;
+  }
+
+  .comparison-control {
+    grid-template-columns: 1fr auto;
+  }
+
+  .comparison-control input {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .publishing-actions,
