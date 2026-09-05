@@ -32,6 +32,37 @@ export SAD_RELEASE_REPO=arts-link/screenshot-a-day
 export SAD_RELEASE_PR=29
 ```
 
+### Fast evidence collection
+
+The guarded evidence collector records command output, GitHub JSON, a Markdown summary, and
+SHA-256 checksums under the ignored `release-evidence/` directory. It never merges, tags, pushes,
+deploys, or changes GitHub settings.
+
+Before merging, run the PR phase from the release-candidate branch. It checks the pinned PR head,
+required checks, review threads, matching commit sign-offs, repository settings, and Section 2
+local preflight:
+
+```sh
+pnpm release:evidence -- --phase pr --pr "$SAD_RELEASE_PR"
+```
+
+After the rebase merge and successful `git pull --ff-only origin main`, copy the full resulting
+`main` SHA into `SAD_RELEASE_SHA`. For the quickest final pass, reuse and save the automatically
+triggered exact-SHA `main` CI run while the collector performs the isolated source-container smoke:
+
+```sh
+export SAD_RELEASE_SHA="$(git rev-parse HEAD)"
+pnpm release:evidence -- --phase final \
+  --expected-sha "$SAD_RELEASE_SHA" \
+  --validation-source ci
+```
+
+Use `--validation-source local` instead to execute every Section 3 command on the operator machine.
+The final phase requires a clean `main` checkout matching both the supplied SHA and `origin/main`.
+Its Compose project, port, secrets, and volume are disposable and isolated; it saves logs and then
+removes that stack. The generated summary leaves the judgment-dependent Section 4 scenarios
+unchecked for the operator.
+
 ## 1. Merge gate
 
 PR [#9](https://github.com/arts-link/screenshot-a-day/pull/9) merged the application release candidate after green DCO, `validate`, `container-smoke`, and CodeQL checks at source head `6d28e67` on 2026-08-30. Treat that as historical evidence, not permission to skip fresh checks on the final release pull request.
