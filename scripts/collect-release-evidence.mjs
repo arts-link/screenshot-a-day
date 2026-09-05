@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { dirname, relative, resolve, sep } from "node:path";
 import process from "node:process";
@@ -270,24 +270,9 @@ function evidencePath(directory, name) {
   return path;
 }
 
-async function createEvidenceDirectory(phase, sha) {
-  if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error(`invalid evidence commit SHA: ${sha}`);
+async function createEvidenceDirectory() {
   await mkdir(evidenceRoot, { recursive: true });
-  const timestamp = new Date()
-    .toISOString()
-    .replaceAll(/[-:]/g, "")
-    .replace(/\.\d{3}Z$/, "Z");
-  const phaseSegment = phase === "pr" ? "pr" : "final";
-  const stem = `v0.1.0-${phaseSegment}-${timestamp}-${sha.slice(0, 12).toLocaleLowerCase()}`;
-  for (let suffix = 0; ; suffix += 1) {
-    const directory = evidencePath(evidenceRoot, suffix ? `${stem}-${suffix + 1}` : stem);
-    try {
-      await mkdir(directory);
-      return directory;
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-    }
-  }
+  return evidencePath(await mkdtemp(`${evidenceRoot}${sep}v0.1.0-`));
 }
 
 function createRecorder(directory) {
@@ -1027,10 +1012,7 @@ async function main() {
   }
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   const initialSha = await initialGitSha();
-  const evidenceDirectory = await createEvidenceDirectory(
-    options.phase,
-    options.expectedSha ?? initialSha,
-  );
+  const evidenceDirectory = await createEvidenceDirectory();
   const recorder = createRecorder(evidenceDirectory);
   const startedAt = new Date().toISOString();
   let fatalError = null;
