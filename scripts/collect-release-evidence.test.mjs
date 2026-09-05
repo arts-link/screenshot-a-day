@@ -21,14 +21,12 @@ describe("release evidence options", () => {
           "--skip-containers",
         ],
         {},
-        "/srv/sad",
       ),
     ).toMatchObject({
       phase: "final",
       expectedSha: "a".repeat(40),
       validationSource: "ci",
       skipContainers: true,
-      outputRoot: "/srv/sad/release-evidence",
     });
   });
 
@@ -46,6 +44,12 @@ describe("release evidence options", () => {
   it("rejects phase-specific options in a PR run", () => {
     expect(() => parseEvidenceOptions(["--phase", "pr", "--validation-source", "ci"], {})).toThrow(
       /only valid/,
+    );
+  });
+
+  it("does not allow evidence to be written to an operator-controlled path", () => {
+    expect(() => parseEvidenceOptions(["--phase", "pr", "--output", "/tmp/untrusted"], {})).toThrow(
+      /unknown option/,
     );
   });
 });

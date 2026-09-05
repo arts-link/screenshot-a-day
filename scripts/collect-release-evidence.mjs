@@ -3,11 +3,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { chmod, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const evidenceRoot = resolve(root, "release-evidence");
 const defaultRepository = "arts-link/screenshot-a-day";
 const defaultPullRequest = 29;
 const successfulCheckStates = new Set(["SUCCESS"]);
@@ -44,21 +45,19 @@ Options:
   --expected-sha <sha>            Exact merged main SHA (required for final)
   --validation-source <local|ci>  Run validation locally or reuse exact-SHA main CI
                                    (default: local)
-  --output <directory>            Evidence root (default: ./release-evidence)
   --skip-containers               Skip Section 4 container smoke and mark it incomplete
   --help                          Show this help
 
 The command never merges, tags, pushes, deploys, or edits GitHub settings.`;
 }
 
-export function parseEvidenceOptions(args, env = process.env, cwd = process.cwd()) {
+export function parseEvidenceOptions(args, env = process.env) {
   const options = {
     phase: null,
     pullRequest: Number(env.SAD_RELEASE_PR ?? defaultPullRequest),
     repository: env.SAD_RELEASE_REPO ?? defaultRepository,
     expectedSha: env.SAD_RELEASE_SHA ?? null,
     validationSource: "local",
-    outputRoot: resolve(cwd, "release-evidence"),
     skipContainers: false,
     help: false,
   };
@@ -78,7 +77,6 @@ export function parseEvidenceOptions(args, env = process.env, cwd = process.cwd(
     else if (argument === "--repo") options.repository = value();
     else if (argument === "--expected-sha") options.expectedSha = value();
     else if (argument === "--validation-source") options.validationSource = value();
-    else if (argument === "--output") options.outputRoot = resolve(cwd, value());
     else if (argument === "--skip-containers") options.skipContainers = true;
     else if (argument === "--help" || argument === "-h") options.help = true;
     else throw new Error(`unknown option: ${argument}`);
@@ -256,15 +254,33 @@ function quoteArgument(value) {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
-async function createEvidenceDirectory(outputRoot, phase, sha) {
-  await mkdir(outputRoot, { recursive: true });
+function evidencePath(directory, name) {
+  const normalizedDirectory = resolve(directory);
+  const prefix = `${evidenceRoot}${sep}`;
+  if (normalizedDirectory !== evidenceRoot && !normalizedDirectory.startsWith(prefix)) {
+    throw new Error(`evidence path escapes ${evidenceRoot}`);
+  }
+  if (name !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
+    throw new Error(`invalid evidence filename: ${name}`);
+  }
+  const path = name === undefined ? normalizedDirectory : resolve(normalizedDirectory, name);
+  if (path !== evidenceRoot && !path.startsWith(prefix)) {
+    throw new Error(`evidence path escapes ${evidenceRoot}`);
+  }
+  return path;
+}
+
+async function createEvidenceDirectory(phase, sha) {
+  if (!/^[0-9a-f]{40}$/i.test(sha)) throw new Error(`invalid evidence commit SHA: ${sha}`);
+  await mkdir(evidenceRoot, { recursive: true });
   const timestamp = new Date()
     .toISOString()
     .replaceAll(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z");
-  const stem = `v0.1.0-${phase}-${timestamp}-${sha.slice(0, 12)}`;
+  const phaseSegment = phase === "pr" ? "pr" : "final";
+  const stem = `v0.1.0-${phaseSegment}-${timestamp}-${sha.slice(0, 12).toLocaleLowerCase()}`;
   for (let suffix = 0; ; suffix += 1) {
-    const directory = resolve(outputRoot, suffix ? `${stem}-${suffix + 1}` : stem);
+    const directory = evidencePath(evidenceRoot, suffix ? `${stem}-${suffix + 1}` : stem);
     try {
       await mkdir(directory);
       return directory;
@@ -286,7 +302,7 @@ function createRecorder(directory) {
       .replaceAll(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
     const logName = `${String(sequence).padStart(2, "0")}-${safeLabel}.log`;
-    const logPath = resolve(directory, logName);
+    const logPath = evidencePath(directory, logName);
     const stream = createWriteStream(logPath, { flags: "wx", mode: 0o600 });
     const display = [command, ...args].map(quoteArgument).join(" ");
     const startedAt = new Date();
@@ -354,7 +370,9 @@ function createRecorder(directory) {
 }
 
 async function writeJson(directory, name, value) {
-  await writeFile(resolve(directory, name), `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  await writeFile(evidencePath(directory, name), `${JSON.stringify(value, null, 2)}\n`, {
+    mode: 0o600,
+  });
   return name;
 }
 
@@ -690,7 +708,7 @@ async function collectCiValidation(options, recorder, directory) {
     "--json",
     "databaseId,headSha,status,conclusion,url,jobs,workflowName,createdAt,updatedAt",
   ]);
-  await writeFile(resolve(directory, "03-ci-run.json"), details.stdout, { mode: 0o600 });
+  await writeFile(evidencePath(directory, "03-ci-run.json"), details.stdout, { mode: 0o600 });
   const logs = await recorder.run("Exact-SHA main CI logs", "gh", [
     "run",
     "view",
@@ -888,12 +906,12 @@ async function collectFinalPhase(options, recorder, directory) {
   }
 }
 
-async function listFiles(directory, base = directory) {
+async function listFiles(directory) {
   const paths = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = resolve(directory, entry.name);
-    if (entry.isDirectory()) paths.push(...(await listFiles(path, base)));
-    else paths.push({ path, relative: relative(base, path) });
+    if (!entry.isFile()) continue;
+    const path = evidencePath(directory, entry.name);
+    paths.push({ path, relative: relative(directory, path) });
   }
   return paths;
 }
@@ -909,7 +927,9 @@ async function writeChecksums(directory) {
       .digest("hex");
     lines.push(`${digest}  ${file.relative}`);
   }
-  await writeFile(resolve(directory, "SHA256SUMS"), `${lines.join("\n")}\n`, { mode: 0o600 });
+  await writeFile(evidencePath(directory, "SHA256SUMS"), `${lines.join("\n")}\n`, {
+    mode: 0o600,
+  });
 }
 
 function renderSummary(metadata, checks, fatalError) {
@@ -975,14 +995,14 @@ async function finishEvidence(directory, options, recorder, startedAt, sha, fata
   await writeJson(directory, "checks.json", recorder.checks);
   await writeJson(directory, "manifest.json", metadata);
   await writeFile(
-    resolve(directory, "summary.md"),
+    evidencePath(directory, "summary.md"),
     renderSummary(metadata, recorder.checks, fatalError),
     {
       mode: 0o600,
     },
   );
   await writeChecksums(directory);
-  await chmod(directory, 0o700);
+  await chmod(evidencePath(directory), 0o700);
 }
 
 async function initialGitSha() {
@@ -1008,7 +1028,6 @@ async function main() {
   const packageJson = JSON.parse(await readFile(resolve(root, "package.json"), "utf8"));
   const initialSha = await initialGitSha();
   const evidenceDirectory = await createEvidenceDirectory(
-    options.outputRoot,
     options.phase,
     options.expectedSha ?? initialSha,
   );
@@ -1034,7 +1053,7 @@ async function main() {
       fatalError,
     );
     console.log(`\nRelease evidence: ${evidenceDirectory}`);
-    console.log(`Summary: ${resolve(evidenceDirectory, "summary.md")}`);
+    console.log(`Summary: ${evidencePath(evidenceDirectory, "summary.md")}`);
   }
 }
 
