@@ -9,7 +9,7 @@ Screenshot-a-Day is a self-hosted visual history for websites. It captures repro
 
 [Website and documentation](https://arts-link.github.io/screenshot-a-day/) · [Source and releases](https://github.com/arts-link/screenshot-a-day) · [Security reporting](SECURITY.md)
 
-Version 0.1.0 is the initial open-source release. The public demo at `https://screenshots.arts-link.com/` will be linked when the released deployment passes its launch checks. Follow the [technical release runbook](docs/plans/release-v0.1.0.md), use the [30-day promotion runbook](docs/launch/promotion-v0.1.0.md), read the [v0.1.0 release notes](docs/releases/v0.1.0.md), or review the [architecture decisions](docs/adr/README.md).
+Version 0.1.0 is the initial open-source release. The [public archive](https://screenshots.arts-link.com/) demonstrates the static galleries published by the private released deployment; it does not expose the administrator UI, API, or worker. Follow the [technical release runbook](docs/plans/release-v0.1.0.md), use the [30-day promotion runbook](docs/launch/promotion-v0.1.0.md), read the [v0.1.0 release notes](docs/releases/v0.1.0.md), or review the [architecture decisions](docs/adr/README.md).
 
 ## Quick start
 
