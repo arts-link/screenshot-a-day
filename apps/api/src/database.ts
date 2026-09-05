@@ -339,11 +339,17 @@ export class AppDatabase {
     return row;
   }
   updateAdministratorPassword(passwordHash: string): void {
-    this.raw
-      .prepare(
-        "UPDATE users SET password_hash=? WHERE id=(SELECT id FROM users ORDER BY created_at LIMIT 1)",
-      )
-      .run(passwordHash);
+    const update = this.raw.transaction(() => {
+      const administrator = this.raw
+        .prepare("SELECT id FROM users ORDER BY created_at LIMIT 1")
+        .get() as { id: string } | undefined;
+      if (!administrator) return;
+      this.raw
+        .prepare("UPDATE users SET password_hash=? WHERE id=?")
+        .run(passwordHash, administrator.id);
+      this.raw.prepare("DELETE FROM sessions WHERE user_id=?").run(administrator.id);
+    });
+    update();
   }
 
   createSession(userId: string, idHash: string, expiresAt: Date): void {

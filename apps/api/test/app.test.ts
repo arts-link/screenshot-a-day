@@ -145,6 +145,42 @@ describe("control plane", () => {
     });
   }
 
+  it("revokes every administrator session after password recovery", async () => {
+    const secondSessionToken = "another-administrator-session-token";
+    const user = db.getUserByEmail("admin@example.com")!;
+    db.createSession(user.id, hashToken(secondSessionToken), new Date(Date.now() + 60_000));
+    const recoveryToken = "administrator-recovery-token";
+    db.setSetting(
+      "admin_recovery",
+      JSON.stringify({
+        tokenHash: hashToken(recoveryToken),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+
+    const recovered = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/recover",
+      payload: { token: recoveryToken, password: "a newly recovered password" },
+    });
+    expect(recovered.statusCode, recovered.body).toBe(204);
+
+    for (const token of [sessionToken, secondSessionToken]) {
+      const me = await app.inject({
+        url: "/api/v1/auth/me",
+        headers: { cookie: `sad_session=${token}` },
+      });
+      expect(me.statusCode, me.body).toBe(401);
+    }
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "admin@example.com", password: "a newly recovered password" },
+    });
+    expect(login.statusCode, login.body).toBe(200);
+  });
+
   it("reports health and exact version information", async () => {
     const health = await app.inject({ url: "/health/ready" });
     expect(health.statusCode).toBe(200);
