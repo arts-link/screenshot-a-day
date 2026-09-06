@@ -10,6 +10,12 @@ const requiredFiles = [
   "index.html",
   "privacy.html",
   "styles.css",
+  "assets/fonts/dm-sans-latin-ext.woff2",
+  "assets/fonts/dm-sans-latin.woff2",
+  "assets/fonts/fraunces-normal-latin-ext.woff2",
+  "assets/fonts/fraunces-normal-latin.woff2",
+  "assets/fonts/fraunces-italic-latin-ext.woff2",
+  "assets/fonts/fraunces-italic-latin.woff2",
   "script.js",
   "analytics.js",
   "og.png",
@@ -22,6 +28,7 @@ for (const file of requiredFiles) await access(resolve(site, file));
 
 const html = await readFile(resolve(site, "index.html"), "utf8");
 const privacy = await readFile(resolve(site, "privacy.html"), "utf8");
+const styles = await readFile(resolve(site, "styles.css"), "utf8");
 const analytics = await readFile(resolve(site, "analytics.js"), "utf8");
 const requireMatch = (pattern, message) => {
   if (!pattern.test(html)) throw new Error(message);
@@ -61,6 +68,31 @@ requireMatch(
 );
 requireMatch(/releases\/tag\/v0\.1\.0/i, "site/index.html must link to the v0.1.0 release");
 requireMatch(/Open source[\s\S]*v0\.1\.0/i, "site/index.html must show the stable version");
+
+for (const [file, contents] of [
+  ["site/index.html", html],
+  ["site/privacy.html", privacy],
+  ["site/styles.css", styles],
+]) {
+  if (/fonts\.(?:googleapis|gstatic)\.com/i.test(contents)) {
+    throw new Error(`${file} must not depend on Google-hosted fonts`);
+  }
+}
+for (const font of [
+  "dm-sans-latin-ext.woff2",
+  "dm-sans-latin.woff2",
+  "fraunces-normal-latin-ext.woff2",
+  "fraunces-normal-latin.woff2",
+  "fraunces-italic-latin-ext.woff2",
+  "fraunces-italic-latin.woff2",
+]) {
+  if (!styles.includes(`./assets/fonts/${font}`)) {
+    throw new Error(`site/styles.css must load local font asset ${font}`);
+  }
+}
+if (!/font-display:\s*swap/i.test(styles)) {
+  throw new Error("site/styles.css must allow fallback text while local fonts load");
+}
 
 if (!/<html\s+lang="en"/i.test(privacy))
   throw new Error("site/privacy.html must declare its language");
