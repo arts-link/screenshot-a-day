@@ -15,6 +15,11 @@ import {
 import type { CaptureProfileInput, CaptureRecord } from "@sad/contracts";
 import { api, type Comparison, type ExportArtifact, type ProjectDetail, type Webhook } from "./api";
 import {
+  AUTH_EXPIRED_EVENT,
+  authMessageFromState,
+  redirectAfterSessionExpiry,
+} from "./auth-expiry";
+import {
   activeCaptureRun,
   captureActionDetail,
   captureActionLabel,
@@ -132,10 +137,32 @@ function Splash() {
   );
 }
 
+function AuthExpiryRedirect() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const redirected = useRef(false);
+
+  useEffect(() => {
+    if (location.pathname !== "/login") redirected.current = false;
+    const handleSessionExpiry = () => {
+      if (redirected.current) return;
+      redirected.current = true;
+      redirectAfterSessionExpiry(navigate, () => queryClient.clear(), location);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleSessionExpiry);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleSessionExpiry);
+  }, [location, navigate, queryClient]);
+
+  return null;
+}
+
 function AuthPage({ setup = false }: { setup?: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [error, setError] = useState<unknown>();
+  const authMessage = authMessageFromState(location.state);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(undefined);
@@ -169,6 +196,12 @@ function AuthPage({ setup = false }: { setup?: boolean }) {
             ? "Use the one-time token printed by the API container to establish the administrator."
             : "Sign in to see how your sites have changed."}
         </p>
+        {authMessage ? (
+          <div className="error-notice" role="alert">
+            <span aria-hidden="true">×</span>
+            {authMessage}
+          </div>
+        ) : null}
         <ErrorNotice error={error} />
         <form onSubmit={submit}>
           {setup && (
@@ -2711,6 +2744,7 @@ export default function App() {
   return (
     <>
       <Grain />
+      <AuthExpiryRedirect />
       <Routes>
         <Route
           path="/setup"

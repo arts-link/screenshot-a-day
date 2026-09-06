@@ -5,6 +5,7 @@ import type {
   VersionInfo,
 } from "@sad/contracts";
 import type { CaptureRun } from "./capture-action";
+import { AUTH_EXPIRED_EVENT } from "./auth-expiry";
 
 export interface Profile {
   id: string;
@@ -137,12 +138,24 @@ export interface Comparison {
   diffDataUrl: string;
 }
 
+const AUTHENTICATION_REQUESTS = new Set([
+  "/api/v1/auth/login",
+  "/api/v1/auth/recover",
+  "/api/v1/setup",
+]);
+
+function notifySessionExpiry(path: string, status: number): void {
+  if (status !== 401 || AUTHENTICATION_REQUESTS.has(path) || typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
     headers: { ...(init?.body ? { "content-type": "application/json" } : {}), ...init?.headers },
   });
   if (!response.ok) {
+    notifySessionExpiry(path, response.status);
     const body = (await response.json().catch(() => ({ error: `HTTP ${response.status}` }))) as {
       error?: string;
     };
@@ -167,6 +180,7 @@ async function capturePage(
   if (profileId) query.set("profileId", profileId);
   const response = await fetch(`/api/v1/projects/${id}/captures?${query}`);
   if (!response.ok) {
+    notifySessionExpiry(`/api/v1/projects/${id}/captures`, response.status);
     const body = (await response.json().catch(() => ({ error: `HTTP ${response.status}` }))) as {
       error?: string;
     };
