@@ -460,8 +460,8 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         hashToken(body.token) !== recovery.tokenHash
       )
         return reply.code(401).send({ error: "Recovery token is invalid or expired" });
-      db.updateAdministratorPassword(await hashPassword(body.password));
-      db.deleteSetting("admin_recovery");
+      if (!db.recoverAdministratorPassword(stored, await hashPassword(body.password)))
+        return reply.code(401).send({ error: "Recovery token is invalid or expired" });
       return reply.code(204).send();
     },
   );

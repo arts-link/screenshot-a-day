@@ -338,18 +338,25 @@ export class AppDatabase {
       .run({ ...row, created_at: new Date().toISOString() });
     return row;
   }
-  updateAdministratorPassword(passwordHash: string): void {
-    const update = this.raw.transaction(() => {
+  recoverAdministratorPassword(recoveryValue: string, passwordHash: string): boolean {
+    return this.raw.transaction(() => {
       const administrator = this.raw
         .prepare("SELECT id FROM users ORDER BY created_at LIMIT 1")
         .get() as { id: string } | undefined;
-      if (!administrator) return;
-      this.raw
+      if (!administrator) return false;
+
+      const consumed = this.raw
+        .prepare("DELETE FROM settings WHERE key=? AND value=?")
+        .run("admin_recovery", recoveryValue);
+      if (consumed.changes !== 1) return false;
+
+      const updated = this.raw
         .prepare("UPDATE users SET password_hash=? WHERE id=?")
         .run(passwordHash, administrator.id);
+      if (updated.changes !== 1) throw new Error("Administrator password update failed");
       this.raw.prepare("DELETE FROM sessions WHERE user_id=?").run(administrator.id);
-    });
-    update();
+      return true;
+    })();
   }
 
   createSession(userId: string, idHash: string, expiresAt: Date): void {
