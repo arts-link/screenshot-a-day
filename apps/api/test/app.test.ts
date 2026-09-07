@@ -9,6 +9,7 @@ import { buildApp, drainBlobDeletions } from "../src/app.js";
 import { hashPassword } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 import { AppDatabase } from "../src/database.js";
+import { PreviewService } from "../src/previews.js";
 import { LocalBlobStore } from "../src/storage.js";
 import type { FastifyInstance } from "fastify";
 
@@ -776,8 +777,30 @@ describe("control plane", () => {
       .find((candidate) => candidate.id === project.id);
     expect(summary).toMatchObject({
       latestCaptureAt: "2026-01-01T00:00:00.000Z",
-      latestThumbnailUrl: `/api/v1/captures/${successful.id}/thumbnail`,
+      latestThumbnailUrl: `/api/v1/captures/${successful.id}/thumbnail?v=2`,
     });
+  });
+
+  it("repairs stored previews from retained full-resolution captures", async () => {
+    const project = (await createFixtureProject("preview-repair")).json<{
+      id: string;
+      profiles: Array<{ id: string }>;
+    }>();
+    const capture = await seedCapture(
+      project.id,
+      project.profiles[0]!.id,
+      "succeeded",
+      "2026-01-01T00:00:00.000Z",
+    );
+    const previousKey = capture.thumbnail_key!;
+    const repaired = await new PreviewService(db, blobs).repairLegacy();
+    const nextKey = db.getCapture(capture.id)!.thumbnail_key!;
+
+    expect(repaired).toEqual({ repaired: 1, failed: 0 });
+    expect(nextKey).toMatch(/^previews\/v2\//);
+    expect((await sharp(await blobs.get(nextKey)).metadata()).format).toBe("webp");
+    await drainBlobDeletions(db, blobs);
+    await expect(blobs.get(previousKey)).rejects.toThrow();
   });
 
   it("compares only distinct successful captures from the same project and profile", async () => {

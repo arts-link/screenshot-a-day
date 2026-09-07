@@ -520,7 +520,7 @@ export class AppDatabase {
           latestCaptureAt: row.latest_capture_at,
           latestThumbnailUrl:
             row.latest_capture_id && row.latest_thumbnail_key
-              ? `/api/v1/captures/${row.latest_capture_id}/thumbnail`
+              ? `/api/v1/captures/${row.latest_capture_id}/thumbnail?v=2`
               : null,
           createdAt: row.created_at,
         };
@@ -916,6 +916,23 @@ export class AppDatabase {
   }
   getCapture(id: string): CaptureRow | undefined {
     return this.raw.prepare("SELECT * FROM captures WHERE id=?").get(id) as CaptureRow | undefined;
+  }
+  listStoredPreviewCaptures(): CaptureRow[] {
+    return this.raw
+      .prepare(
+        "SELECT * FROM captures WHERE image_key IS NOT NULL AND thumbnail_key IS NOT NULL ORDER BY captured_at",
+      )
+      .all() as CaptureRow[];
+  }
+  replaceCapturePreview(id: string, previousKey: string, nextKey: string): boolean {
+    return this.raw.transaction(() => {
+      const replaced =
+        this.raw
+          .prepare("UPDATE captures SET thumbnail_key=? WHERE id=? AND thumbnail_key=?")
+          .run(nextKey, id, previousKey).changes === 1;
+      if (replaced) this.queueBlobDeletion(previousKey);
+      return replaced;
+    })();
   }
   retentionVictims(projectId: string, profileId: string, now = new Date()): CaptureRow[] {
     const project = this.getProject(projectId);

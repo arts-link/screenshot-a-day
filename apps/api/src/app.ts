@@ -55,6 +55,7 @@ import { ComparisonCapacityError, ComparisonService } from "./comparisons.js";
 import { ComparisonTooLargeError, compareImages, thumbnail } from "./images.js";
 import { registerMcpEndpoint } from "./mcp.js";
 import { captureDto, projectPublicationDto, publicProject } from "./presenters.js";
+import { PreviewService, versionedPreviewUrl } from "./previews.js";
 import { startScheduler } from "./scheduler.js";
 import { LocalBlobStore, type BlobStore } from "./storage.js";
 import { startWebhookDispatcher } from "./webhooks.js";
@@ -281,6 +282,19 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     log: app.log,
   });
   const comparisons = new ComparisonService();
+  const previews = new PreviewService(db, blobs);
+  void previews
+    .repairLegacy()
+    .then(({ repaired, failed }) => {
+      if (repaired) app.log.info({ repaired }, "legacy capture previews repaired");
+      if (failed) app.log.warn({ failed }, "legacy capture previews could not be repaired");
+    })
+    .catch((error) =>
+      app.log.warn(
+        { error: error instanceof Error ? error.message : "unknown" },
+        "legacy capture preview repair stopped early",
+      ),
+    );
   void cleanupStalePublicationDirectories().catch((error) =>
     app.log.warn(
       { error: error instanceof Error ? error.message : "unknown" },
@@ -925,7 +939,9 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     reply
       .type(request.params.kind === "thumbnail" ? "image/webp" : "image/png")
       .header("cache-control", "private, max-age=3600");
-    return reply.send(await blobs.get(key));
+    return reply.send(
+      request.params.kind === "thumbnail" ? await previews.get(capture) : await blobs.get(key),
+    );
   }
   app.get<{ Params: { id: string } }>("/api/v1/captures/:id/image", async (request, reply) =>
     sendCaptureBlob(
@@ -1315,7 +1331,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     }
     const capturedAt = String(metadata.capturedAt ?? new Date().toISOString());
     const imageKey = `captures/${job.project_id}/${job.profile_id}/${job.id}.png`;
-    const thumbnailKey = `thumbnails/${job.project_id}/${job.profile_id}/${job.id}.webp`;
+    const thumbnailKey = `previews/v2/${job.project_id}/${job.profile_id}/${job.id}.webp`;
     const digest = createHash("sha256").update(bytes).digest("hex");
     await Promise.all([
       blobs.put(imageKey, bytes),
@@ -1410,7 +1426,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     if (body.screenshotBase64) {
       const bytes = Buffer.from(body.screenshotBase64, "base64");
       imageKey = `failures/${job.project_id}/${job.profile_id}/${job.id}.png`;
-      thumbnailKey = `failure-thumbnails/${job.project_id}/${job.profile_id}/${job.id}.webp`;
+      thumbnailKey = `failure-previews/v2/${job.project_id}/${job.profile_id}/${job.id}.webp`;
       await Promise.all([
         blobs.put(imageKey, bytes),
         blobs.put(thumbnailKey, await thumbnail(bytes)),
@@ -1502,7 +1518,9 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
         .map((capture) => ({
           ...captureDto(capture),
           imageUrl: `/${kind === "slug" ? "p" : "s"}/${value}/captures/${capture.id}/image`,
-          thumbnailUrl: `/${kind === "slug" ? "p" : "s"}/${value}/captures/${capture.id}/thumbnail`,
+          thumbnailUrl: versionedPreviewUrl(
+            `/${kind === "slug" ? "p" : "s"}/${value}/captures/${capture.id}/thumbnail`,
+          ),
         })),
       exports: (["gif", "webm"] as const).map((format) =>
         exportSummary(
@@ -1548,7 +1566,7 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
       const publicDto = (capture: CaptureRow) => ({
         ...captureDto(capture),
         imageUrl: `${prefix}/${capture.id}/image`,
-        thumbnailUrl: `${prefix}/${capture.id}/thumbnail`,
+        thumbnailUrl: versionedPreviewUrl(`${prefix}/${capture.id}/thumbnail`),
       });
       return {
         first: publicDto(first),
@@ -1574,10 +1592,11 @@ export async function buildApp(dependencies: Dependencies): Promise<FastifyInsta
     const key = artifact === "image" ? capture.image_key : capture.thumbnail_key;
     if (!key) return reply.code(404).send({ error: "Artifact not found" });
     if (kind === "token") reply.header("x-robots-tag", "noindex, nofollow");
+    const bytes = artifact === "thumbnail" ? await previews.get(capture) : await blobs.get(key);
     return reply
       .type(artifact === "image" ? "image/png" : "image/webp")
       .header("cache-control", "public, max-age=31536000, immutable")
-      .send(await blobs.get(key));
+      .send(bytes);
   }
   app.get<{ Params: { slug: string; id: string; artifact: "image" | "thumbnail" } }>(
     "/p/:slug/captures/:id/:artifact",

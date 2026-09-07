@@ -2,6 +2,8 @@ import pixelmatch from "pixelmatch";
 import sharp from "sharp";
 
 export const MAX_COMPARISON_PIXELS = 16_000_000;
+export const PREVIEW_WIDTH = 1120;
+export const PREVIEW_HEIGHT = 700;
 
 export class ComparisonTooLargeError extends Error {
   constructor(readonly pixels: number) {
@@ -14,7 +16,13 @@ export class ComparisonTooLargeError extends Error {
 
 export async function thumbnail(bytes: Buffer): Promise<Buffer> {
   return sharp(bytes)
-    .resize({ width: 560, height: 400, fit: "inside", withoutEnlargement: true })
+    .resize({
+      width: PREVIEW_WIDTH,
+      height: PREVIEW_HEIGHT,
+      fit: "cover",
+      position: "top",
+      withoutEnlargement: true,
+    })
     .webp({ quality: 78 })
     .toBuffer();
 }

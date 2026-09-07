@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- Fix #56: Anchor capture-card previews to the top of the retained page.
 - 16740dd: Keep webhook signing-secret copy confirmation and manual fallback guidance beside the revealed value.
 - ab6b989: Keep completed setup state authoritative through logout and route directly to Login.
 - d164932: Keep API-token copy confirmation and manual fallback guidance beside the one-time value.
