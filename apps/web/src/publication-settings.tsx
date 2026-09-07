@@ -1,6 +1,6 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api, type PublicationTarget } from "./api";
 import {
@@ -208,12 +208,14 @@ function TargetPanel({
   creating,
   onOpenChange,
   onChanged,
+  onReturnFocus,
 }: {
   open: boolean;
   target: PublicationTarget | undefined;
   creating: boolean;
   onOpenChange: (open: boolean) => void;
   onChanged: (targetId?: string, close?: boolean) => Promise<void>;
+  onReturnFocus: () => void;
 }) {
   const [adapter, setAdapter] = useState<"vercel" | "netlify" | "sftp">(
     target?.adapter ?? "vercel",
@@ -222,6 +224,7 @@ function TargetPanel({
   const [scheduleMode, setScheduleMode] = useState(target?.scheduleMode ?? "manual");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<unknown>();
   const history = useQuery({
     queryKey: ["publication-history", target?.id],
@@ -331,11 +334,27 @@ function TargetPanel({
     }
   };
   const scheduled = ["hourly", "daily", "weekly", "custom"].includes(scheduleMode);
+  const changeOpen = (next: boolean) => {
+    if (busy) return;
+    if (
+      !next &&
+      dirty &&
+      !window.confirm("Discard the unsaved destination changes? This cannot be undone.")
+    )
+      return;
+    onOpenChange(next);
+  };
   return (
-    <Dialog.Root open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
+    <Dialog.Root open={open} onOpenChange={changeOpen}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="target-panel">
+        <Dialog.Content
+          className="target-panel"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            onReturnFocus();
+          }}
+        >
           <header className="target-panel-head">
             <div>
               <Eyebrow tone="muted">Static publishing</Eyebrow>
@@ -349,7 +368,12 @@ function TargetPanel({
               </Dialog.Description>
             </div>
             <Dialog.Close asChild>
-              <button className="icon-button" aria-label="Close target editor">
+              <button
+                className="icon-button"
+                aria-label={
+                  dirty ? "Discard changes and close target editor" : "Close target editor"
+                }
+              >
                 ×
               </button>
             </Dialog.Close>
@@ -362,7 +386,7 @@ function TargetPanel({
                 : undefined)
             }
           />
-          <form className="target-panel-form" onSubmit={submit}>
+          <form className="target-panel-form" onSubmit={submit} onChange={() => setDirty(true)}>
             <fieldset className="target-form-section">
               <legend>Destination</legend>
               <p>Give this connection a recognizable name and choose where the site is deployed.</p>
@@ -638,7 +662,7 @@ function TargetPanel({
             <footer className="target-panel-actions">
               <Dialog.Close asChild>
                 <Button type="button" variant="secondary" disabled={busy}>
-                  Cancel
+                  {dirty ? "Discard changes" : "Cancel"}
                 </Button>
               </Dialog.Close>
               <Button type="submit" disabled={busy}>
@@ -662,6 +686,7 @@ function TargetPanel({
 export function PublicationSettings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [error, setError] = useState<unknown>();
+  const editorOpener = useRef<HTMLElement | null>(null);
   const publicationStatus = useQuery({
     queryKey: ["publication-status"],
     queryFn: api.publicationStatus,
@@ -681,6 +706,11 @@ export function PublicationSettings() {
     else next.delete("target");
     setSearchParams(next, { replace: true });
   };
+  const openEditor = (value: string) => {
+    editorOpener.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setEditor(value);
+  };
   const changed = async (targetId?: string, close = false) => {
     await publicationTargets.refetch();
     if (close) setEditor();
@@ -697,7 +727,7 @@ export function PublicationSettings() {
             connections.
           </p>
         </div>
-        <Button onClick={() => setEditor("new")}>Add target →</Button>
+        <Button onClick={() => openEditor("new")}>Add target →</Button>
       </div>
       <ErrorNotice error={error ?? publicationTargets.error} />
       {publicationStatus.data && !publicationStatus.data.available && (
@@ -711,7 +741,7 @@ export function PublicationSettings() {
             <TargetCard
               key={target.id}
               target={target}
-              onEdit={() => setEditor(target.id)}
+              onEdit={() => openEditor(target.id)}
               onChanged={() => publicationTargets.refetch()}
               onError={setError}
             />
@@ -733,6 +763,7 @@ export function PublicationSettings() {
           if (!open) setEditor();
         }}
         onChanged={changed}
+        onReturnFocus={() => editorOpener.current?.focus()}
       />
     </section>
   );

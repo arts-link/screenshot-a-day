@@ -204,6 +204,13 @@ try {
     },
   });
   seedPublicationTarget(indexable.id);
+  db.createWebhook(
+    indexable.id,
+    "https://hooks.example.com/screenshot-a-day",
+    "unused-e2e-encrypted-secret",
+    0,
+    ["capture.changed", "capture.failed"],
+  );
   const unlisted = await createProject("E2E unlisted", "e2e-unlisted", "unlisted");
   await seedCapture(unlisted.id, unlisted.profiles[0].id, 0);
   await seedCapture(unlisted.id, unlisted.profiles[0].id, 1);
@@ -321,6 +328,141 @@ try {
     "deploying",
   ]);
   await page.getByRole("button", { name: "Queued…" }).waitFor();
+
+  const profileSettings = page.locator(".profile-settings").filter({ hasText: "Edit Desktop" });
+  await profileSettings.getByText("Edit Desktop", { exact: true }).click();
+  const readinessSelector = profileSettings.getByLabel("Readiness selector");
+  const saveProfile = profileSettings.getByRole("button", { name: "Save profile" });
+  const profileEndpoint = `**/api/v1/projects/${indexable.id}/profiles/${profileId}`;
+  await readinessSelector.fill("#release-ready");
+  await saveProfile.scrollIntoViewIfNeeded();
+  const profileScrollPosition = await page.evaluate(() => globalThis.scrollY);
+  await page.route(profileEndpoint, async (route) => {
+    if (route.request().method() === "PUT")
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    await route.continue();
+  });
+  await saveProfile.click();
+  const savingProfile = profileSettings.getByRole("button", { name: "Saving…" });
+  await savingProfile.waitFor();
+  assert.equal(await savingProfile.isDisabled(), true);
+  await profileSettings
+    .getByText("Profile saved; run a test capture before scheduling.", { exact: true })
+    .waitFor();
+  assert.equal(await page.evaluate(() => globalThis.scrollY), profileScrollPosition);
+  await page.unroute(profileEndpoint);
+
+  assert.deepEqual(browserErrors, []);
+  await readinessSelector.fill("#preserved-after-validation");
+  await page.route(profileEndpoint, async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Readiness selector is invalid" }),
+    });
+  });
+  await saveProfile.click();
+  const profileSaveError = profileSettings.locator(".profile-save-feedback .error-notice");
+  await profileSaveError.waitFor();
+  assert.match(await profileSaveError.innerText(), /Readiness selector is invalid/);
+  assert.equal(await readinessSelector.inputValue(), "#preserved-after-validation");
+  assert.equal(await page.evaluate(() => globalThis.scrollY), profileScrollPosition);
+  assert.match(browserErrors.pop() ?? "", /status of 400/);
+  assert.deepEqual(browserErrors, []);
+  await page.unroute(profileEndpoint);
+
+  await readinessSelector.fill("#preserved-after-network-error");
+  await page.route(profileEndpoint, async (route) => route.abort("internetdisconnected"));
+  await saveProfile.click();
+  await page.waitForFunction(() => {
+    const notice = globalThis.document.querySelector(
+      ".profile-settings[open] .profile-save-feedback .error-notice",
+    );
+    return notice && !notice.textContent?.includes("Readiness selector is invalid");
+  });
+  assert.match(await profileSaveError.innerText(), /fetch|network/i);
+  assert.equal(await readinessSelector.inputValue(), "#preserved-after-network-error");
+  assert.equal(await page.evaluate(() => globalThis.scrollY), profileScrollPosition);
+  assert.match(browserErrors.pop() ?? "", /ERR_INTERNET_DISCONNECTED/);
+  assert.deepEqual(browserErrors, []);
+  await page.unroute(profileEndpoint);
+
+  const webhookCard = page.locator(".webhook-card").first();
+  const rotateSecret = webhookCard.getByRole("button", { name: "Rotate secret" });
+  await rotateSecret.waitFor();
+  await page.evaluate(() => {
+    globalThis.__sadCopiedValue = undefined;
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          globalThis.__sadCopiedValue = value;
+        },
+      },
+    });
+  });
+  await rotateSecret.click();
+  const revealedSecret = webhookCard.getByLabel("Webhook signing secret");
+  await revealedSecret.waitFor();
+  const firstSecret = await revealedSecret.inputValue();
+  await webhookCard.getByRole("button", { name: "Copy secret" }).click();
+  await webhookCard.getByText("Signing secret copied.", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => globalThis.__sadCopiedValue), firstSecret);
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Clipboard permission denied");
+        },
+      },
+    });
+  });
+  await rotateSecret.click();
+  await page.waitForFunction((previous) => {
+    const input = globalThis.document.querySelector(".webhook-secret-reveal input");
+    return input instanceof globalThis.HTMLInputElement && input.value !== previous;
+  }, firstSecret);
+  const secondSecret = await revealedSecret.inputValue();
+  await webhookCard.getByRole("button", { name: "Copy secret" }).click();
+  await webhookCard.getByRole("button", { name: "Select secret" }).waitFor();
+  await webhookCard.getByText(/complete signing secret is selected/i).waitFor();
+  assert.deepEqual(
+    await revealedSecret.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: secondSecret.length, length: secondSecret.length },
+  );
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await rotateSecret.click();
+  await page.waitForFunction((previous) => {
+    const input = globalThis.document.querySelector(".webhook-secret-reveal input");
+    return input instanceof globalThis.HTMLInputElement && input.value !== previous;
+  }, secondSecret);
+  const thirdSecret = await revealedSecret.inputValue();
+  await webhookCard.getByRole("button", { name: "Copy secret" }).click();
+  await webhookCard.getByRole("button", { name: "Select secret" }).waitFor();
+  assert.deepEqual(
+    await revealedSecret.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: thirdSecret.length, length: thirdSecret.length },
+  );
+  await webhookCard.getByRole("button", { name: "Dismiss" }).click();
+  assert.equal(await webhookCard.getByLabel("Webhook signing secret").count(), 0);
+  assert.deepEqual(browserErrors, []);
+
   assert.match(
     await page.getByRole("status").filter({ hasText: "Automatic scheduled captures" }).innerText(),
     /Disabled/,
@@ -350,13 +492,125 @@ try {
   await page.getByRole("heading", { name: "API access" }).waitFor();
   await page.getByRole("heading", { name: "Storage" }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Secrets" }).count(), 0);
-  await page.getByLabel("Token name").fill("E2E release token");
-  await page.getByRole("button", { name: "Create token" }).click();
-  await page.getByText("New token ready").waitFor();
-  assert.equal(await page.locator(".api-access-card .token-reveal").count(), 1);
+
+  const addTarget = page.getByRole("button", { name: /Add target/ });
+  await addTarget.click();
+  const targetDialog = page.getByRole("dialog");
+  await targetDialog.waitFor();
+  await page.locator(".dialog-overlay").click({ position: { x: 5, y: 5 } });
+  await targetDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await addTarget.evaluate((button) => button === globalThis.document.activeElement),
+    true,
+  );
+
+  await addTarget.click();
+  await page.getByLabel("Target name").fill("Unsaved destination");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).waitFor();
+  page.once("dialog", async (confirmation) => {
+    assert.match(confirmation.message(), /Discard the unsaved destination changes/);
+    await confirmation.dismiss();
+  });
+  await page.locator(".dialog-overlay").click({ position: { x: 5, y: 5 } });
+  assert.equal(await page.getByLabel("Target name").inputValue(), "Unsaved destination");
+
+  page.once("dialog", async (confirmation) => {
+    assert.match(confirmation.message(), /Discard the unsaved destination changes/);
+    await confirmation.dismiss();
+  });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByLabel("Target name").inputValue(), "Unsaved destination");
+
+  page.once("dialog", async (confirmation) => {
+    assert.match(confirmation.message(), /Discard the unsaved destination changes/);
+    await confirmation.accept();
+  });
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await targetDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await addTarget.evaluate((button) => button === globalThis.document.activeElement),
+    true,
+  );
+
+  const apiAccessCard = page.locator(".api-access-card");
+  const tokenName = apiAccessCard.getByLabel("Token name");
+  const createToken = apiAccessCard.getByRole("button", { name: "Create token" });
+  const revealedToken = apiAccessCard.getByLabel("New API token");
+  const dismissToken = apiAccessCard.getByRole("button", { name: "Dismiss" });
+
+  await page.evaluate(() => {
+    globalThis.__sadCopiedValue = undefined;
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          globalThis.__sadCopiedValue = value;
+        },
+      },
+    });
+  });
+  await tokenName.fill("E2E copied token");
+  await createToken.click();
+  await revealedToken.waitFor();
+  const copiedToken = await revealedToken.inputValue();
+  await apiAccessCard.getByRole("button", { name: "Copy token" }).click();
+  await apiAccessCard.getByText("API token copied.", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => globalThis.__sadCopiedValue), copiedToken);
   assert.equal(await page.locator(".error-notice").count(), 0);
-  await page.getByRole("button", { name: "Dismiss" }).click();
-  assert.equal(await page.locator(".token-reveal").count(), 0);
+  await dismissToken.click();
+  assert.equal(await revealedToken.count(), 0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Clipboard permission denied");
+        },
+      },
+    });
+  });
+  await tokenName.fill("E2E manually copied token");
+  await createToken.click();
+  await revealedToken.waitFor();
+  const selectedToken = await revealedToken.inputValue();
+  await apiAccessCard.getByRole("button", { name: "Copy token" }).click();
+  await apiAccessCard.getByRole("button", { name: "Select token" }).waitFor();
+  await apiAccessCard.getByText(/complete API token is selected/i).waitFor();
+  assert.deepEqual(
+    await revealedToken.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: selectedToken.length, length: selectedToken.length },
+  );
+  assert.equal(await page.locator(".error-notice").count(), 0);
+  await dismissToken.click();
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await tokenName.fill("E2E unavailable clipboard token");
+  await createToken.click();
+  await revealedToken.waitFor();
+  const unavailableToken = await revealedToken.inputValue();
+  await apiAccessCard.getByRole("button", { name: "Copy token" }).click();
+  await apiAccessCard.getByRole("button", { name: "Select token" }).waitFor();
+  assert.deepEqual(
+    await revealedToken.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: unavailableToken.length, length: unavailableToken.length },
+  );
+  await dismissToken.click();
+  assert.equal(await revealedToken.count(), 0);
+  assert.deepEqual(browserErrors, []);
 
   await page.goto(`${baseUrl}/p/e2e-indexable`);
   await page.getByRole("heading", { name: "E2E indexable" }).waitFor();

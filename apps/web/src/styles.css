@@ -1314,6 +1314,16 @@ legend {
   gap: 10px;
 }
 
+.profile-save-feedback {
+  min-height: 44px;
+  flex: 1 1 320px;
+}
+
+.profile-save-feedback .error-notice,
+.profile-save-feedback .success-notice {
+  margin: 0;
+}
+
 .project-danger-zone {
   border-bottom: 0;
 }
@@ -2052,6 +2062,33 @@ input[type="range"] {
 .target-card-published {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.copyable-value {
+  display: grid;
+  gap: 8px;
+}
+
+.copyable-value-input {
+  min-width: 0;
+  padding: 10px 12px;
+  flex: 1;
+  border: 1px solid var(--border-hairline);
+  color: var(--text-accent);
+  background: var(--border-hairline);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+
+.copyable-value-feedback {
+  margin: 0;
+  color: var(--text-body);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.copyable-value-feedback-error {
+  color: rgb(var(--color-ember-light));
 }
 
 .target-card-url {

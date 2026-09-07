@@ -39,6 +39,7 @@ import {
   Spinner,
   Status,
 } from "./components";
+import { CopyableValue } from "./copyable-value";
 import {
   projectPublicationActionLabel,
   publicationInFlight,
@@ -1609,12 +1610,18 @@ function ProfileSettings({
 }) {
   const [error, setError] = useState<unknown>();
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const settings = profile.settings;
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
     setError(undefined);
+    setSaved(false);
     try {
       await api.updateProfile(
         projectId,
@@ -1625,15 +1632,14 @@ function ProfileSettings({
       onChanged();
     } catch (caught) {
       setError(caught);
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
     }
   };
   return (
     <details className="profile-settings">
       <summary>Edit {profile.name}</summary>
-      <ErrorNotice error={error} />
-      {saved && (
-        <div className="success-notice">Profile saved; run a test capture before scheduling.</div>
-      )}
       <form onSubmit={save}>
         <div className="form-row profile-basics">
           <Field label="Name">
@@ -1743,9 +1749,18 @@ function ProfileSettings({
           Capture this profile in project runs
         </label>
         <div className="profile-form-actions">
-          <Button type="submit" variant="secondary">
-            Save profile
+          <Button type="submit" variant="secondary" disabled={saving} aria-busy={saving}>
+            {saving && <Spinner />}
+            {saving ? "Saving…" : "Save profile"}
           </Button>
+          <div className="profile-save-feedback" aria-live="polite">
+            {error ? <ErrorNotice error={error} /> : null}
+            {saved ? (
+              <div className="success-notice" role="status">
+                Profile saved; run a test capture before scheduling.
+              </div>
+            ) : null}
+          </div>
           <Button
             type="button"
             variant="danger"
@@ -1798,7 +1813,6 @@ function WebhookCard({
   const [busy, setBusy] = useState<string>();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string>();
-  const [secretCopied, setSecretCopied] = useState(false);
   const deliveries = useQuery({
     queryKey: ["webhook-deliveries", projectId, hook.id],
     queryFn: () => api.webhookDeliveries(projectId, hook.id),
@@ -1912,7 +1926,6 @@ function WebhookCard({
                 .rotateWebhookSecret(projectId, hook.id)
                 .then(({ secret }) => {
                   setRevealedSecret(secret);
-                  setSecretCopied(false);
                   onNotice("Webhook secret rotated. Copy the new value from this webhook now.");
                 })
                 .catch(onError)
@@ -1947,28 +1960,15 @@ function WebhookCard({
                 Dismiss
               </Button>
             </div>
-            <div className="token-reveal-value">
-              <code>{revealedSecret}</code>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(revealedSecret)
-                    .then(() => setSecretCopied(true))
-                    .catch(() =>
-                      onError(
-                        new Error(
-                          "The secret could not be copied. Select it and copy it manually.",
-                        ),
-                      ),
-                    );
-                }}
-              >
-                {secretCopied ? "Copied ✓" : "Copy secret"}
-              </Button>
-            </div>
+            <CopyableValue
+              key={revealedSecret}
+              value={revealedSecret}
+              label="Webhook signing secret"
+              copyLabel="Copy secret"
+              manualLabel="Select secret"
+              copiedMessage="Signing secret copied."
+              manualMessage="Clipboard access is unavailable. The complete signing secret is selected; press Command+C or Ctrl+C to copy it manually."
+            />
           </div>
         )}
       </form>
@@ -2581,7 +2581,6 @@ function Settings() {
   const tokens = useQuery({ queryKey: ["tokens"], queryFn: api.tokens });
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
   const [revealed, setRevealed] = useState<string>();
-  const [copied, setCopied] = useState(false);
   const [mcpCopied, setMcpCopied] = useState(false);
   const [error, setError] = useState<unknown>();
   const mcpUrl = `${window.location.origin}/mcp`;
@@ -2596,22 +2595,11 @@ function Settings() {
         projectIds: null,
       });
       setRevealed(result.token);
-      setCopied(false);
       setError(undefined);
       form.reset();
       await tokens.refetch();
     } catch (caught) {
       setError(caught);
-    }
-  };
-  const copyRevealedToken = async () => {
-    if (!revealed) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
-      setCopied(true);
-      setError(undefined);
-    } catch {
-      setError(new Error("The token could not be copied. Select it and copy it manually."));
     }
   };
   const copyMcpUrl = async () => {
@@ -2682,12 +2670,15 @@ function Settings() {
                   Dismiss
                 </Button>
               </div>
-              <div className="token-reveal-value">
-                <code>{revealed}</code>
-                <Button size="sm" variant="secondary" onClick={copyRevealedToken}>
-                  {copied ? "Copied ✓" : "Copy token"}
-                </Button>
-              </div>
+              <CopyableValue
+                key={revealed}
+                value={revealed}
+                label="New API token"
+                copyLabel="Copy token"
+                manualLabel="Select token"
+                copiedMessage="API token copied."
+                manualMessage="Clipboard access is unavailable. The complete API token is selected; press Command+C or Ctrl+C to copy it manually."
+              />
             </div>
           )}
           <form onSubmit={create}>
