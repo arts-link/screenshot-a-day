@@ -1,4 +1,5 @@
 import { assertSafeUrl, decryptJson, signWebhook } from "@sad/core";
+import { PRODUCT_VERSION } from "@sad/contracts";
 import type { FastifyBaseLogger } from "fastify";
 import type { AppConfig } from "./config.js";
 import type { AppDatabase } from "./database.js";
@@ -52,7 +53,7 @@ export function startWebhookDispatcher(
           delivery.payload_json,
           {
             "content-type": "application/json",
-            "user-agent": "Screenshot-a-Day/0.1.0",
+            "user-agent": `Screenshot-a-Day/${PRODUCT_VERSION}`,
             "x-sad-event": delivery.event,
             "x-sad-timestamp": timestamp,
             "x-sad-signature": `sha256=${signWebhook(secret, timestamp, delivery.payload_json)}`,

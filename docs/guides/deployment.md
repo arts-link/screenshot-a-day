@@ -25,7 +25,7 @@ Terminate TLS at a reverse proxy, forward to API port 4400, preserve the `Host` 
 
 ## Scaling workers
 
-The API is single-instance in v0.1.0 because it owns SQLite and scheduling. Workers are stateless and may scale independently:
+The API is single-instance in v0.1.x because it owns SQLite and scheduling. Workers are stateless and may scale independently:
 
 ```sh
 docker compose up -d --scale worker=3

@@ -145,14 +145,14 @@
     window.posthog.capture("marketing_cta_clicked", {
       destination: link.dataset.analyticsDestination,
       placement: link.dataset.analyticsPlacement,
-      release: "0.1.0",
+      release: "0.1.1",
     });
   });
 
   document.addEventListener("sad:install-command-copied", () => {
     window.posthog.capture("install_command_copied", {
       placement: "quick-start",
-      release: "0.1.0",
+      release: "0.1.1",
     });
   });
 })();

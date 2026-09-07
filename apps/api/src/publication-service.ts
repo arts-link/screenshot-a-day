@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { assertSafeUrl, decryptJson, nextSchedule } from "@sad/core";
-import type { PublicationScheduleMode } from "@sad/contracts";
+import { PRODUCT_VERSION, type PublicationScheduleMode } from "@sad/contracts";
 import type { AppConfig } from "./config.js";
 import type { AppDatabase, PublicationJobRow, PublicationTargetRow } from "./database.js";
 import { publicationAdapterFor, type PublicationAdapter } from "./publication-adapters.js";
@@ -62,7 +62,7 @@ export async function verifyPublicationUrl(
         method: "GET",
         headers: {
           accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.1",
-          "user-agent": "Screenshot-a-Day/0.1.0 verification",
+          "user-agent": `Screenshot-a-Day/${PRODUCT_VERSION} verification`,
         },
         redirect: "manual",
         signal: AbortSignal.timeout(15_000),

@@ -316,7 +316,7 @@ describe("control plane", () => {
     expect(health.headers["x-frame-options"]).toBe("DENY");
     expect(health.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
     expect((await app.inject({ url: "/version" })).json()).toEqual({
-      version: "0.1.0",
+      version: "0.1.1",
       commit: "test-commit",
       apiVersion: "v1",
     });

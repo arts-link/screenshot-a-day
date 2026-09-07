@@ -2,7 +2,25 @@
 
 All notable changes to Screenshot-a-Day are documented here. The project follows Semantic Versioning.
 
-## 0.1.0 - Unreleased
+## 0.1.1 - 2026-09-07
+
+### Fixed
+
+- Administrator password recovery now consumes the recovery token, changes the password, and revokes every administrator session atomically. Revoked browser sessions return directly to Login with clear guidance.
+- Logout preserves completed setup state and replaces browser history with the Login route, preventing the setup-token form from appearing after setup is complete.
+- Capture-profile saves and webhook creation now keep pending, success, validation, and network feedback beside the initiating control while preserving failed form values.
+- One-time API tokens and webhook signing secrets now provide adjacent copy confirmation and a full-value manual-selection fallback when clipboard access is denied or unavailable.
+- Unsaved publication destinations now require explicit confirmation before backdrop, Escape, or cancel dismissal.
+
+### Changed
+
+- The GitHub Pages site now self-hosts its fonts so third-party font availability cannot block rendering.
+
+### Database
+
+- No schema changes. Existing v0.1.0 data volumes upgrade in place; downgrades remain unsupported.
+
+## 0.1.0 - 2026-09-05
 
 ### Added
 
