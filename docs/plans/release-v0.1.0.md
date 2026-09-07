@@ -280,30 +280,45 @@ docker compose logs api
 - [ ] Back up and restore the clean-machine data once.
 - [ ] Confirm an anonymous user can follow the public release notes and quick start without unpublished knowledge.
 
-## 9. Demo deployment
+## 9. Private deployment and public archive
 
-- [ ] Deploy the API and worker by the exact immutable digests recorded in the GitHub Release.
-- [ ] Verify TLS, readiness, restart policy, persistent storage, monitoring, backup automation, and a restore.
-- [ ] Confirm the administrator remains on the explicit login route and is not linked from the public root.
+The production Screenshot-a-Day application remains private on the operator's
+tailnet. The public surface is the generated static archive at
+`https://screenshots.arts-link.com/`; it is not a public deployment of the
+administrator UI, API, or worker.
+
+For this single-operator pilot, the private deployment may use the versioned
+`0.1.0` image tags rather than embedding immutable digests in Compose. At
+deployment time, record the locally resolved API and worker digests and verify
+that they match the immutable digests in the GitHub Release. Automatic image
+updates must remain disabled so changing a deployed image requires an explicit
+operator action. Direct digest pinning remains recommended for unattended or
+public application deployments, but is not a v0.1.0 go-live requirement for
+this private pilot.
+
+- [ ] Deploy the private API and worker from the versioned `0.1.0` release images; record and verify their resolved digests against the GitHub Release.
+- [ ] Confirm no automatic image updater can replace the running containers without an explicit operator action.
+- [ ] Verify private TLS, readiness, restart policy, persistent storage, monitoring, backup automation, and a restore.
+- [ ] Confirm the administrator UI, API, and worker are reachable only on the intended private network and are not linked from the public archive.
 - [ ] Publish only approved public content for Arts-Link-owned or explicitly authorized targets.
 - [ ] Verify indexable and unlisted robots behavior and remove any private data from captures.
-- [ ] Point `https://screenshots.arts-link.com/` at the primary public gallery and verify its asset, gallery, comparison, and animation URLs.
+- [ ] Point `https://screenshots.arts-link.com/` at the primary public static gallery and verify its asset, gallery, comparison, and animation URLs.
 
 ## 10. Pages marketing-site and analytics cutover
 
-The marketing-site change is a separate, focused pull request after the released demo is healthy.
+The marketing-site change is a separate, focused pull request after the released public archive is healthy.
 
 - [ ] Change the badge to `Open source · v0.1.0` and link it to the GitHub Release.
-- [ ] Add live-demo actions in the header, hero, and closing CTA while keeping source and installation paths visible.
+- [ ] Add live-archive actions in the header, hero, and closing CTA while keeping source and installation paths visible.
 - [ ] Verify metadata, canonical URL, JSON-LD version, sitemap, social image, alt text, keyboard focus, and page weight.
 - [ ] Confirm `site/privacy.html` accurately distinguishes cookieless Pages analytics from the self-hosted product's no-product-telemetry guarantee.
 - [ ] Confirm PostHog uses the public Arts-Link project through `https://g.arts-link.com`, only on the Pages production origin.
 - [ ] In PostHog, enable cookieless server hash mode and disable IP capture for the project before merging.
 - [ ] Confirm the Pages integration creates no cookies or analytics browser storage; disables profiles, autocapture, replay, surveys, flags, exceptions, heatmaps, and performance capture; and honors DNT/GPC.
 - [ ] Confirm only `$pageview`, `marketing_cta_clicked`, and `install_command_copied` arrive, with sanitized URLs/referrers and allowlisted campaign fields.
-- [ ] Confirm localhost, non-Pages paths, the application, the demo, and default published galleries receive no automatic marketing events.
+- [ ] Confirm localhost, non-Pages paths, the private application, the public archive, and default published galleries receive no automatic marketing events.
 - [ ] Run `pnpm site:check` and the full `pnpm check`; merge only after the Pages workflow is green.
-- [ ] Test the deployed site on desktop and mobile, with and without JavaScript, and click every release, demo, install, source, security, Arts-Link, and privacy link.
+- [ ] Test the deployed site on desktop and mobile, with and without JavaScript, and click every release, archive, install, source, security, Arts-Link, and privacy link.
 - [ ] Set the repository homepage to `https://arts-link.github.io/screenshot-a-day/` and upload `site/og.png` as the repository social preview.
 - [ ] Confirm the PostHog launch dashboard shows a production pageview and one test conversion, then exclude the operator's test traffic from launch reporting.
 
@@ -313,24 +328,24 @@ Promotion may start only when all are true:
 
 - [ ] The tag workflow, GitHub Release, and both public GHCR packages are healthy.
 - [ ] The clean-machine installation and restore passed.
-- [ ] The exact-digest demo is healthy and contains only approved public content.
+- [ ] The private released-image deployment and public static archive are healthy, and the archive contains only approved public content.
 - [ ] The Pages launch state and all links are live.
 - [ ] Pages analytics is verified or explicitly disabled; a partially working tracker is not acceptable.
-- [ ] The release record contains the final SHA, tag object, workflow URLs, digests, attestations, demo revision, Pages revision, and acceptance evidence.
+- [ ] The release record contains the final SHA, tag object, workflow URLs, digests, attestations, private deployment revision, public archive revision, Pages revision, and acceptance evidence.
 
 Hand off to the [v0.1.0 promotion runbook](../launch/promotion-v0.1.0.md).
 
 ## Failure and recovery rules
 
-| Failure point                                          | Action                                                                                                                                                            |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Before tagging                                         | Fix through a reviewed PR, rerun all affected gates, and update the release SHA.                                                                                  |
-| Release `verify` fails before any package is published | Stop. Confirm no Release or image tag exists before the repository owner decides whether to remove the failed tag and retry.                                      |
-| Either image or any GitHub Release artifact exists     | Never move or recreate `v0.1.0`; correct forward as `0.1.1`.                                                                                                      |
-| Clean-machine test fails                               | Do not promote. File the defect, publish a patch if artifacts already exist, and test from clean state again.                                                     |
-| Demo fails                                             | Keep the prelaunch Pages state or remove its demo links; restore the last known-good deployment or take the demo offline.                                         |
-| Pages or analytics fails                               | Keep product artifacts available but stop promotion until a site-only correction is deployed and verified.                                                        |
-| Security defect                                        | Use private vulnerability reporting, remove vulnerable public demo access if needed, and publish an advisory plus fixed patch; do not silently rewrite artifacts. |
+| Failure point                                          | Action                                                                                                                                                               |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Before tagging                                         | Fix through a reviewed PR, rerun all affected gates, and update the release SHA.                                                                                     |
+| Release `verify` fails before any package is published | Stop. Confirm no Release or image tag exists before the repository owner decides whether to remove the failed tag and retry.                                         |
+| Either image or any GitHub Release artifact exists     | Never move or recreate `v0.1.0`; correct forward as `0.1.1`.                                                                                                         |
+| Clean-machine test fails                               | Do not promote. File the defect, publish a patch if artifacts already exist, and test from clean state again.                                                        |
+| Public archive fails                                   | Keep the prelaunch Pages state or remove its archive links; restore the last known-good publication or take the archive offline.                                     |
+| Pages or analytics fails                               | Keep product artifacts available but stop promotion until a site-only correction is deployed and verified.                                                           |
+| Security defect                                        | Use private vulnerability reporting, remove vulnerable public archive access if needed, and publish an advisory plus fixed patch; do not silently rewrite artifacts. |
 
 ## Future releases
 
