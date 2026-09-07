@@ -34,6 +34,7 @@ import {
   Spinner,
   Status,
 } from "./components";
+import { CopyableValue } from "./copyable-value";
 import {
   projectPublicationActionLabel,
   publicationInFlight,
@@ -1779,7 +1780,6 @@ function WebhookCard({
   const [busy, setBusy] = useState<string>();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [revealedSecret, setRevealedSecret] = useState<string>();
-  const [secretCopied, setSecretCopied] = useState(false);
   const deliveries = useQuery({
     queryKey: ["webhook-deliveries", projectId, hook.id],
     queryFn: () => api.webhookDeliveries(projectId, hook.id),
@@ -1893,7 +1893,6 @@ function WebhookCard({
                 .rotateWebhookSecret(projectId, hook.id)
                 .then(({ secret }) => {
                   setRevealedSecret(secret);
-                  setSecretCopied(false);
                   onNotice("Webhook secret rotated. Copy the new value from this webhook now.");
                 })
                 .catch(onError)
@@ -1928,28 +1927,15 @@ function WebhookCard({
                 Dismiss
               </Button>
             </div>
-            <div className="token-reveal-value">
-              <code>{revealedSecret}</code>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(revealedSecret)
-                    .then(() => setSecretCopied(true))
-                    .catch(() =>
-                      onError(
-                        new Error(
-                          "The secret could not be copied. Select it and copy it manually.",
-                        ),
-                      ),
-                    );
-                }}
-              >
-                {secretCopied ? "Copied ✓" : "Copy secret"}
-              </Button>
-            </div>
+            <CopyableValue
+              key={revealedSecret}
+              value={revealedSecret}
+              label="Webhook signing secret"
+              copyLabel="Copy secret"
+              manualLabel="Select secret"
+              copiedMessage="Signing secret copied."
+              manualMessage="Clipboard access is unavailable. The complete signing secret is selected; press Command+C or Ctrl+C to copy it manually."
+            />
           </div>
         )}
       </form>
