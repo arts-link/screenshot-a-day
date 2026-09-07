@@ -1,9 +1,11 @@
+import { QueryClient } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { request } from "../src/api";
 import {
   AUTH_EXPIRED_EVENT,
   AUTH_EXPIRED_MESSAGE,
   authMessageFromState,
+  clearAuthenticatedQueryState,
   redirectAfterSessionExpiry,
 } from "../src/auth-expiry";
 
@@ -13,6 +15,17 @@ afterEach(() => {
 });
 
 describe("session expiry handling", () => {
+  it("clears private queries while preserving completed setup routing", () => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(["setup-status"], { configured: false });
+    queryClient.setQueryData(["projects"], [{ id: "private-project" }]);
+
+    clearAuthenticatedQueryState(queryClient);
+
+    expect(queryClient.getQueryData(["projects"])).toBeUndefined();
+    expect(queryClient.getQueryData(["setup-status"])).toEqual({ configured: true });
+  });
+
   it("redirects to Login with an actionable message and clears cached data", () => {
     const clear = vi.fn();
     const navigate = vi.fn();

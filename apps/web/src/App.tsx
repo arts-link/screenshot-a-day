@@ -17,6 +17,7 @@ import { api, type Comparison, type ExportArtifact, type ProjectDetail, type Web
 import {
   AUTH_EXPIRED_EVENT,
   authMessageFromState,
+  clearAuthenticatedQueryState,
   redirectAfterSessionExpiry,
 } from "./auth-expiry";
 import {
@@ -79,6 +80,9 @@ function Shell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const version = useQuery({ queryKey: ["version"], queryFn: api.version });
+  useEffect(() => {
+    queryClient.setQueryData(["setup-status"], { configured: true });
+  }, [queryClient]);
   return (
     <div className="shell">
       <header className="app-header">
@@ -106,8 +110,8 @@ function Shell() {
             className="sign-out"
             onClick={() =>
               api.logout().then(() => {
-                queryClient.clear();
-                navigate("/login");
+                clearAuthenticatedQueryState(queryClient);
+                navigate("/login", { replace: true });
               })
             }
           >
@@ -149,7 +153,11 @@ function AuthExpiryRedirect() {
     const handleSessionExpiry = () => {
       if (redirected.current) return;
       redirected.current = true;
-      redirectAfterSessionExpiry(navigate, () => queryClient.clear(), location);
+      redirectAfterSessionExpiry(
+        navigate,
+        () => clearAuthenticatedQueryState(queryClient),
+        location,
+      );
     };
     window.addEventListener(AUTH_EXPIRED_EVENT, handleSessionExpiry);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleSessionExpiry);

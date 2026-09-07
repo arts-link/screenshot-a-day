@@ -1,3 +1,5 @@
+import type { QueryClient } from "@tanstack/react-query";
+
 export const AUTH_EXPIRED_EVENT = "sad-auth-expired";
 export const AUTH_EXPIRED_MESSAGE =
   "Your administrator session has expired or was revoked. Sign in again to continue.";
@@ -11,6 +13,11 @@ export interface AuthRedirectLocation {
 export interface AuthRedirectState {
   from: AuthRedirectLocation;
   message: string;
+}
+
+export function clearAuthenticatedQueryState(queryClient: QueryClient): void {
+  queryClient.clear();
+  queryClient.setQueryData(["setup-status"], { configured: true });
 }
 
 export function redirectAfterSessionExpiry(
