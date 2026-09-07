@@ -350,6 +350,46 @@ try {
   await page.getByRole("heading", { name: "API access" }).waitFor();
   await page.getByRole("heading", { name: "Storage" }).waitFor();
   assert.equal(await page.getByRole("heading", { name: "Secrets" }).count(), 0);
+
+  const addTarget = page.getByRole("button", { name: /Add target/ });
+  await addTarget.click();
+  const targetDialog = page.getByRole("dialog");
+  await targetDialog.waitFor();
+  await page.locator(".dialog-overlay").click({ position: { x: 5, y: 5 } });
+  await targetDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await addTarget.evaluate((button) => button === globalThis.document.activeElement),
+    true,
+  );
+
+  await addTarget.click();
+  await page.getByLabel("Target name").fill("Unsaved destination");
+  await page.getByRole("button", { name: "Discard changes", exact: true }).waitFor();
+  page.once("dialog", async (confirmation) => {
+    assert.match(confirmation.message(), /Discard the unsaved destination changes/);
+    await confirmation.dismiss();
+  });
+  await page.locator(".dialog-overlay").click({ position: { x: 5, y: 5 } });
+  assert.equal(await page.getByLabel("Target name").inputValue(), "Unsaved destination");
+
+  page.once("dialog", async (confirmation) => {
+    assert.match(confirmation.message(), /Discard the unsaved destination changes/);
+    await confirmation.dismiss();
+  });
+  await page.keyboard.press("Escape");
+  assert.equal(await page.getByLabel("Target name").inputValue(), "Unsaved destination");
+
+  page.once("dialog", async (confirmation) => {
+    assert.match(confirmation.message(), /Discard the unsaved destination changes/);
+    await confirmation.accept();
+  });
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
+  await targetDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await addTarget.evaluate((button) => button === globalThis.document.activeElement),
+    true,
+  );
+
   await page.getByLabel("Token name").fill("E2E release token");
   await page.getByRole("button", { name: "Create token" }).click();
   await page.getByText("New token ready").waitFor();
