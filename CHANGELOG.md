@@ -11,6 +11,7 @@ All notable changes to Screenshot-a-Day are documented here. The project follows
 - Capture-profile saves and webhook creation now keep pending, success, validation, and network feedback beside the initiating control while preserving failed form values.
 - One-time API tokens and webhook signing secrets now provide adjacent copy confirmation and a full-value manual-selection fallback when clipboard access is denied or unavailable.
 - Unsaved publication destinations now require explicit confirmation before backdrop, Escape, or cancel dismissal.
+- Capture cards now use sharp top-of-page previews instead of stretching full-page thumbnails. Existing previews rebuild automatically from retained originals and invalidate stale browser caches.
 
 ### Changed
 

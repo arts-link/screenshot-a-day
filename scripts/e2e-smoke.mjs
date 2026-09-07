@@ -315,7 +315,7 @@ try {
     await indexableCard
       .getByRole("img", { name: `Latest capture of ${indexable.name}` })
       .getAttribute("src"),
-    `/api/v1/captures/${captureIds.at(-1)}/thumbnail`,
+    `/api/v1/captures/${captureIds.at(-1)}/thumbnail?v=2`,
   );
   assert.equal(
     await indexableCard.getByRole("link", { name: "Open gallery" }).getAttribute("href"),

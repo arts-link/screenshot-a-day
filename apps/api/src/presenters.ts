@@ -1,5 +1,6 @@
 import type { CaptureRecord } from "@sad/contracts";
 import type { AppDatabase, CaptureRow, ProjectRow, PublicationJobRow } from "./database.js";
+import { versionedPreviewUrl } from "./previews.js";
 
 export function captureDto(row: CaptureRow): CaptureRecord {
   return {
@@ -16,7 +17,9 @@ export function captureDto(row: CaptureRow): CaptureRecord {
     sha256: row.sha256,
     changePercent: row.change_percent,
     imageUrl: row.image_key ? `/api/v1/captures/${row.id}/image` : null,
-    thumbnailUrl: row.thumbnail_key ? `/api/v1/captures/${row.id}/thumbnail` : null,
+    thumbnailUrl: row.thumbnail_key
+      ? versionedPreviewUrl(`/api/v1/captures/${row.id}/thumbnail`)
+      : null,
     error: row.error,
   };
 }
