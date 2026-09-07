@@ -217,6 +217,85 @@ try {
 
   await app.listen({ host: "127.0.0.1", port });
   browser = await chromium.launch({ headless: true });
+
+  const authContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const authPage = await authContext.newPage();
+  let setupConfigured = false;
+  const authBrowserErrors = [];
+  authPage.on("console", (message) => {
+    if (message.type() === "error") authBrowserErrors.push(message.text());
+  });
+  authPage.on("pageerror", (error) => authBrowserErrors.push(error.message));
+  await authPage.route("**/api/v1/setup/status", async (route) => {
+    if (setupConfigured) await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ configured: setupConfigured }),
+    });
+  });
+  await authPage.route("**/api/v1/setup", async (route) => {
+    assert.equal(route.request().method(), "POST");
+    setupConfigured = true;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ email: "first-admin@example.com" }),
+    });
+  });
+  await authPage.route("**/api/v1/auth/me", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ authenticated: true }),
+    });
+  });
+  await authPage.route("**/api/v1/projects", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+  await authPage.route("**/api/v1/auth/logout", async (route) => {
+    assert.equal(route.request().method(), "POST");
+    await route.fulfill({ status: 204, body: "" });
+  });
+
+  await authPage.goto(`${baseUrl}/setup`);
+  await authPage.getByLabel("Setup token").fill("e2e-initial-setup-token");
+  await authPage.getByLabel("Email").fill("first-admin@example.com");
+  await authPage.getByLabel("Password").fill("correct-horse-battery-staple");
+  await authPage.getByRole("button", { name: "Create administrator" }).click();
+  await authPage.getByRole("heading", { name: "Your projects" }).waitFor();
+  await authPage.evaluate(() => {
+    globalThis.__sadSawSetupAfterLogout = false;
+    const checkForSetup = () => {
+      if (globalThis.document.querySelector('input[name="token"]'))
+        globalThis.__sadSawSetupAfterLogout = true;
+    };
+    new globalThis.MutationObserver(checkForSetup).observe(globalThis.document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  });
+  await authPage.getByRole("button", { name: "Sign out" }).click();
+  await authPage.waitForURL(`${baseUrl}/login`);
+  await authPage.getByRole("heading", { name: "Welcome back" }).waitFor();
+  assert.equal(await authPage.getByLabel("Setup token").count(), 0);
+  assert.equal(await authPage.evaluate(() => globalThis.__sadSawSetupAfterLogout), false);
+
+  await authPage.reload();
+  await authPage.getByRole("heading", { name: "Welcome back" }).waitFor();
+  assert.equal(new URL(authPage.url()).pathname, "/login");
+  assert.equal(await authPage.getByLabel("Setup token").count(), 0);
+  await authPage.goBack();
+  await authPage.getByRole("heading", { name: "Welcome back" }).waitFor();
+  assert.equal(new URL(authPage.url()).pathname, "/login");
+  assert.equal(await authPage.getByLabel("Setup token").count(), 0);
+  await authPage.goForward();
+  await authPage.getByRole("heading", { name: "Welcome back" }).waitFor();
+  assert.equal(new URL(authPage.url()).pathname, "/login");
+  assert.equal(await authPage.getByLabel("Setup token").count(), 0);
+  assert.deepEqual(authBrowserErrors, []);
+  await authContext.close();
+
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
     bypassCSP: true,
