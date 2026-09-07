@@ -1314,6 +1314,16 @@ legend {
   gap: 10px;
 }
 
+.profile-save-feedback {
+  min-height: 44px;
+  flex: 1 1 320px;
+}
+
+.profile-save-feedback .error-notice,
+.profile-save-feedback .success-notice {
+  margin: 0;
+}
+
 .project-danger-zone {
   border-bottom: 0;
 }
