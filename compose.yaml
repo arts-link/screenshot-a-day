@@ -2,12 +2,12 @@ name: screenshot-a-day
 
 services:
   api:
-    image: ghcr.io/arts-link/screenshot-a-day-api:0.1.0
+    image: ghcr.io/arts-link/screenshot-a-day-api:0.1.1
     build:
       context: .
       dockerfile: Dockerfile.api
       args:
-        SAD_VERSION: 0.1.0
+        SAD_VERSION: 0.1.1
         SAD_COMMIT: ${SAD_BUILD_COMMIT:-development}
     restart: unless-stopped
     init: true
@@ -41,12 +41,12 @@ services:
       - no-new-privileges:true
 
   worker:
-    image: ghcr.io/arts-link/screenshot-a-day-worker:0.1.0
+    image: ghcr.io/arts-link/screenshot-a-day-worker:0.1.1
     build:
       context: .
       dockerfile: Dockerfile.worker
       args:
-        SAD_VERSION: 0.1.0
+        SAD_VERSION: 0.1.1
         SAD_COMMIT: ${SAD_BUILD_COMMIT:-development}
     restart: unless-stopped
     init: true

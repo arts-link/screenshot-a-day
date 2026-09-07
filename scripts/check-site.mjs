@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const site = resolve(root, "site");
 const canonical = "https://arts-link.github.io/screenshot-a-day/";
+const version = (await readFile(resolve(root, "VERSION"), "utf8")).trim();
 export const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const requiredFiles = [
   "index.html",
@@ -66,8 +67,22 @@ requireMatch(
   /href="https:\/\/screenshots\.arts-link\.com\/"/i,
   "site/index.html must link to the live demo",
 );
-requireMatch(/releases\/tag\/v0\.1\.0/i, "site/index.html must link to the v0.1.0 release");
-requireMatch(/Open source[\s\S]*v0\.1\.0/i, "site/index.html must show the stable version");
+requireMatch(
+  new RegExp(`releases/tag/v${escapeRegExp(version)}`, "i"),
+  `site/index.html must link to the v${version} release`,
+);
+requireMatch(
+  new RegExp(`Open source[\\s\\S]*v${escapeRegExp(version)}`, "i"),
+  "site/index.html must show the stable version",
+);
+requireMatch(
+  new RegExp(`git clone --branch v${escapeRegExp(version)} --depth 1`, "i"),
+  `site/index.html must clone the immutable v${version} release tag`,
+);
+requireMatch(
+  new RegExp(`blob/v${escapeRegExp(version)}/docs/guides/deployment\\.md`, "i"),
+  `site/index.html must link to the v${version} deployment guide`,
+);
 
 for (const [file, contents] of [
   ["site/index.html", html],
@@ -141,7 +156,7 @@ const jsonLd = JSON.parse(jsonLdMatch[1]);
 if (jsonLd["@context"] !== "https://schema.org" || jsonLd["@type"] !== "SoftwareApplication") {
   throw new Error("site JSON-LD must describe a schema.org SoftwareApplication");
 }
-if (jsonLd.url !== canonical || jsonLd.softwareVersion !== "0.1.0") {
+if (jsonLd.url !== canonical || jsonLd.softwareVersion !== version) {
   throw new Error("site JSON-LD URL or software version is incorrect");
 }
 

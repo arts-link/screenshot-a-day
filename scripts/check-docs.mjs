@@ -20,6 +20,7 @@ const files = [
   "docs/launch/promotion-v0.1.0.md",
   "docs/plans/release-v0.1.0.md",
   "docs/releases/v0.1.0.md",
+  "docs/releases/v0.1.1.md",
 ];
 for (const file of files) {
   const body = await readFile(file, "utf8");

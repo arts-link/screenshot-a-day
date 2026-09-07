@@ -105,7 +105,7 @@ function Shell() {
             Source ↗
           </a>
           <span className="header-divider" aria-hidden="true" />
-          <span>v{version.data?.version ?? "0.1.0"}</span>
+          <span>v{version.data?.version ?? "0.1.1"}</span>
           <button
             className="sign-out"
             onClick={() =>
@@ -2627,7 +2627,7 @@ function PublicGallery() {
         </nav>
       )}
       <footer>
-        <span>Recorded with Screenshot-a-Day · v0.1.0</span>
+        <span>Recorded with Screenshot-a-Day · v0.1.1</span>
         <span aria-hidden="true"> · </span>
         <ArtsLinkCredit />
         <span aria-hidden="true"> · </span>

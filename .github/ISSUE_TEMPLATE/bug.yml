@@ -3,7 +3,7 @@ description: Report reproducible incorrect behavior without secrets or private s
 body:
   - type: input
     id: version
-    attributes: { label: Version, placeholder: 0.1.0 }
+    attributes: { label: Version, placeholder: 0.1.1 }
     validations: { required: true }
   - type: textarea
     id: description
