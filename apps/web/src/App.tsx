@@ -2548,7 +2548,6 @@ function Settings() {
   const tokens = useQuery({ queryKey: ["tokens"], queryFn: api.tokens });
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
   const [revealed, setRevealed] = useState<string>();
-  const [copied, setCopied] = useState(false);
   const [mcpCopied, setMcpCopied] = useState(false);
   const [error, setError] = useState<unknown>();
   const mcpUrl = `${window.location.origin}/mcp`;
@@ -2563,22 +2562,11 @@ function Settings() {
         projectIds: null,
       });
       setRevealed(result.token);
-      setCopied(false);
       setError(undefined);
       form.reset();
       await tokens.refetch();
     } catch (caught) {
       setError(caught);
-    }
-  };
-  const copyRevealedToken = async () => {
-    if (!revealed) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
-      setCopied(true);
-      setError(undefined);
-    } catch {
-      setError(new Error("The token could not be copied. Select it and copy it manually."));
     }
   };
   const copyMcpUrl = async () => {
@@ -2649,12 +2637,15 @@ function Settings() {
                   Dismiss
                 </Button>
               </div>
-              <div className="token-reveal-value">
-                <code>{revealed}</code>
-                <Button size="sm" variant="secondary" onClick={copyRevealedToken}>
-                  {copied ? "Copied ✓" : "Copy token"}
-                </Button>
-              </div>
+              <CopyableValue
+                key={revealed}
+                value={revealed}
+                label="New API token"
+                copyLabel="Copy token"
+                manualLabel="Select token"
+                copiedMessage="API token copied."
+                manualMessage="Clipboard access is unavailable. The complete API token is selected; press Command+C or Ctrl+C to copy it manually."
+              />
             </div>
           )}
           <form onSubmit={create}>

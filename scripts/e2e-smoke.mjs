@@ -532,13 +532,85 @@ try {
     true,
   );
 
-  await page.getByLabel("Token name").fill("E2E release token");
-  await page.getByRole("button", { name: "Create token" }).click();
-  await page.getByText("New token ready").waitFor();
-  assert.equal(await page.locator(".api-access-card .token-reveal").count(), 1);
+  const apiAccessCard = page.locator(".api-access-card");
+  const tokenName = apiAccessCard.getByLabel("Token name");
+  const createToken = apiAccessCard.getByRole("button", { name: "Create token" });
+  const revealedToken = apiAccessCard.getByLabel("New API token");
+  const dismissToken = apiAccessCard.getByRole("button", { name: "Dismiss" });
+
+  await page.evaluate(() => {
+    globalThis.__sadCopiedValue = undefined;
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          globalThis.__sadCopiedValue = value;
+        },
+      },
+    });
+  });
+  await tokenName.fill("E2E copied token");
+  await createToken.click();
+  await revealedToken.waitFor();
+  const copiedToken = await revealedToken.inputValue();
+  await apiAccessCard.getByRole("button", { name: "Copy token" }).click();
+  await apiAccessCard.getByText("API token copied.", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => globalThis.__sadCopiedValue), copiedToken);
   assert.equal(await page.locator(".error-notice").count(), 0);
-  await page.getByRole("button", { name: "Dismiss" }).click();
-  assert.equal(await page.locator(".token-reveal").count(), 0);
+  await dismissToken.click();
+  assert.equal(await revealedToken.count(), 0);
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Clipboard permission denied");
+        },
+      },
+    });
+  });
+  await tokenName.fill("E2E manually copied token");
+  await createToken.click();
+  await revealedToken.waitFor();
+  const selectedToken = await revealedToken.inputValue();
+  await apiAccessCard.getByRole("button", { name: "Copy token" }).click();
+  await apiAccessCard.getByRole("button", { name: "Select token" }).waitFor();
+  await apiAccessCard.getByText(/complete API token is selected/i).waitFor();
+  assert.deepEqual(
+    await revealedToken.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: selectedToken.length, length: selectedToken.length },
+  );
+  assert.equal(await page.locator(".error-notice").count(), 0);
+  await dismissToken.click();
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await tokenName.fill("E2E unavailable clipboard token");
+  await createToken.click();
+  await revealedToken.waitFor();
+  const unavailableToken = await revealedToken.inputValue();
+  await apiAccessCard.getByRole("button", { name: "Copy token" }).click();
+  await apiAccessCard.getByRole("button", { name: "Select token" }).waitFor();
+  assert.deepEqual(
+    await revealedToken.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: unavailableToken.length, length: unavailableToken.length },
+  );
+  await dismissToken.click();
+  assert.equal(await revealedToken.count(), 0);
+  assert.deepEqual(browserErrors, []);
 
   await page.goto(`${baseUrl}/p/e2e-indexable`);
   await page.getByRole("heading", { name: "E2E indexable" }).waitFor();
