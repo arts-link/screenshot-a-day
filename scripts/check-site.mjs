@@ -83,6 +83,12 @@ requireMatch(
   new RegExp(`blob/v${escapeRegExp(version)}/docs/guides/deployment\\.md`, "i"),
   `site/index.html must link to the v${version} deployment guide`,
 );
+const base64SecretCommands = html.match(/openssl rand -base64 32/gi)?.length ?? 0;
+const hexSecretCommands = html.match(/openssl rand -hex 32/gi)?.length ?? 0;
+if (base64SecretCommands !== 1 || hexSecretCommands !== 2) {
+  throw new Error("site/index.html must generate one Base64 and two hex installation secrets");
+}
+requireMatch(/chmod 600 \.env/i, "site/index.html must protect the populated environment file");
 
 for (const [file, contents] of [
   ["site/index.html", html],
