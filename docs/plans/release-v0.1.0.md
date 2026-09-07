@@ -309,6 +309,7 @@ this private pilot.
 The marketing-site change is a separate, focused pull request after the released public archive is healthy.
 
 - [ ] Change the badge to `Open source · v0.1.0` and link it to the GitHub Release.
+- [ ] After the tag, GitHub Release, and images are live, update the Pages quick start to use `git clone --branch v0.1.0 --depth 1`; confirm the public installation path references the published stable tag rather than `main` or an unpublished tag.
 - [ ] Add live-archive actions in the header, hero, and closing CTA while keeping source and installation paths visible.
 - [ ] Verify metadata, canonical URL, JSON-LD version, sitemap, social image, alt text, keyboard focus, and page weight.
 - [ ] Confirm `site/privacy.html` accurately distinguishes cookieless Pages analytics from the self-hosted product's no-product-telemetry guarantee.
@@ -353,4 +354,5 @@ Hand off to the [v0.1.0 promotion runbook](../launch/promotion-v0.1.0.md).
 2. Run the Version packages workflow and review the generated version pull request.
 3. Merge the exact green version commit and repeat the automated, manual, restore, and clean-machine gates appropriate to the change.
 4. Tag the current `origin/main` tip and let the Release workflow publish containers, SBOMs, attestations, digests, and release notes.
-5. Correct defects with patch releases and retain immutable tags.
+5. After the stable release succeeds, update and deploy the Pages quick start so its clone command pins the exact published tag; never direct stable installations to `main` or an unpublished tag.
+6. Correct defects with patch releases and retain immutable tags.

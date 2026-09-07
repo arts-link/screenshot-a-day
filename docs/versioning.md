@@ -7,6 +7,9 @@ Screenshot-a-Day follows Semantic Versioning and begins at 0.1.0. All workspace 
 - Prereleases use `-alpha.N`, `-beta.N`, or `-rc.N` and never receive `latest`.
 - Every user-visible pull request includes a Changeset.
 - Stable tags are annotated `vX.Y.Z` tags and publish matching GitHub Releases and GHCR images.
+- After each stable tag and its images are published, update the Pages quick start to clone that
+  exact tag with `git clone --branch vX.Y.Z --depth 1`; stable installation instructions must
+  never clone `main` or reference an unpublished tag.
 - `/api/v1` and webhook schema versions are compatibility contracts. A breaking contract ships in parallel under a new version.
 
 Database migrations are forward-only unless a release explicitly documents and tests a rollback.

@@ -320,7 +320,11 @@
           <pre><code data-command><span class="prompt">$</span> git clone --branch v0.1.1 --depth 1 https://github.com/arts-link/screenshot-a-day.git
 <span class="prompt">$</span> cd screenshot-a-day
 <span class="prompt">$</span> cp .env.example .env
-<span class="comment"># Add the three generated secrets to .env, then:</span>
+<span class="prompt">$</span> openssl rand -base64 32
+<span class="prompt">$</span> openssl rand -hex 32
+<span class="prompt">$</span> openssl rand -hex 32
+<span class="comment"># Add those values to the three matching .env entries, then:</span>
+<span class="prompt">$</span> chmod 600 .env
 <span class="prompt">$</span> docker compose pull
 <span class="prompt">$</span> docker compose up -d</code></pre>
           <a
