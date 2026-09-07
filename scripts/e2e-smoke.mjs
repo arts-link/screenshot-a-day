@@ -321,6 +321,65 @@ try {
     "deploying",
   ]);
   await page.getByRole("button", { name: "Queued…" }).waitFor();
+
+  const profileSettings = page.locator(".profile-settings").filter({ hasText: "Edit Desktop" });
+  await profileSettings.getByText("Edit Desktop", { exact: true }).click();
+  const readinessSelector = profileSettings.getByLabel("Readiness selector");
+  const saveProfile = profileSettings.getByRole("button", { name: "Save profile" });
+  const profileEndpoint = `**/api/v1/projects/${indexable.id}/profiles/${profileId}`;
+  await readinessSelector.fill("#release-ready");
+  await saveProfile.scrollIntoViewIfNeeded();
+  const profileScrollPosition = await page.evaluate(() => globalThis.scrollY);
+  await page.route(profileEndpoint, async (route) => {
+    if (route.request().method() === "PUT")
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    await route.continue();
+  });
+  await saveProfile.click();
+  const savingProfile = profileSettings.getByRole("button", { name: "Saving…" });
+  await savingProfile.waitFor();
+  assert.equal(await savingProfile.isDisabled(), true);
+  await profileSettings
+    .getByText("Profile saved; run a test capture before scheduling.", { exact: true })
+    .waitFor();
+  assert.equal(await page.evaluate(() => globalThis.scrollY), profileScrollPosition);
+  await page.unroute(profileEndpoint);
+
+  assert.deepEqual(browserErrors, []);
+  await readinessSelector.fill("#preserved-after-validation");
+  await page.route(profileEndpoint, async (route) => {
+    await route.fulfill({
+      status: 400,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Readiness selector is invalid" }),
+    });
+  });
+  await saveProfile.click();
+  const profileSaveError = profileSettings.locator(".profile-save-feedback .error-notice");
+  await profileSaveError.waitFor();
+  assert.match(await profileSaveError.innerText(), /Readiness selector is invalid/);
+  assert.equal(await readinessSelector.inputValue(), "#preserved-after-validation");
+  assert.equal(await page.evaluate(() => globalThis.scrollY), profileScrollPosition);
+  assert.match(browserErrors.pop() ?? "", /status of 400/);
+  assert.deepEqual(browserErrors, []);
+  await page.unroute(profileEndpoint);
+
+  await readinessSelector.fill("#preserved-after-network-error");
+  await page.route(profileEndpoint, async (route) => route.abort("internetdisconnected"));
+  await saveProfile.click();
+  await page.waitForFunction(() => {
+    const notice = globalThis.document.querySelector(
+      ".profile-settings[open] .profile-save-feedback .error-notice",
+    );
+    return notice && !notice.textContent?.includes("Readiness selector is invalid");
+  });
+  assert.match(await profileSaveError.innerText(), /fetch|network/i);
+  assert.equal(await readinessSelector.inputValue(), "#preserved-after-network-error");
+  assert.equal(await page.evaluate(() => globalThis.scrollY), profileScrollPosition);
+  assert.match(browserErrors.pop() ?? "", /ERR_INTERNET_DISCONNECTED/);
+  assert.deepEqual(browserErrors, []);
+  await page.unroute(profileEndpoint);
+
   assert.match(
     await page.getByRole("status").filter({ hasText: "Automatic scheduled captures" }).innerText(),
     /Disabled/,

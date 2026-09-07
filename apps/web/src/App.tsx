@@ -1576,12 +1576,18 @@ function ProfileSettings({
 }) {
   const [error, setError] = useState<unknown>();
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const settings = profile.settings;
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
     setError(undefined);
+    setSaved(false);
     try {
       await api.updateProfile(
         projectId,
@@ -1592,15 +1598,14 @@ function ProfileSettings({
       onChanged();
     } catch (caught) {
       setError(caught);
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
     }
   };
   return (
     <details className="profile-settings">
       <summary>Edit {profile.name}</summary>
-      <ErrorNotice error={error} />
-      {saved && (
-        <div className="success-notice">Profile saved; run a test capture before scheduling.</div>
-      )}
       <form onSubmit={save}>
         <div className="form-row profile-basics">
           <Field label="Name">
@@ -1710,9 +1715,18 @@ function ProfileSettings({
           Capture this profile in project runs
         </label>
         <div className="profile-form-actions">
-          <Button type="submit" variant="secondary">
-            Save profile
+          <Button type="submit" variant="secondary" disabled={saving} aria-busy={saving}>
+            {saving && <Spinner />}
+            {saving ? "Saving…" : "Save profile"}
           </Button>
+          <div className="profile-save-feedback" aria-live="polite">
+            {error ? <ErrorNotice error={error} /> : null}
+            {saved ? (
+              <div className="success-notice" role="status">
+                Profile saved; run a test capture before scheduling.
+              </div>
+            ) : null}
+          </div>
           <Button
             type="button"
             variant="danger"
