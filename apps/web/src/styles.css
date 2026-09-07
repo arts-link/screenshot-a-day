@@ -1324,6 +1324,22 @@ legend {
   margin: 0;
 }
 
+.webhook-create-actions {
+  display: grid;
+  justify-items: start;
+  gap: 16px;
+}
+
+.webhook-create-feedback {
+  width: 100%;
+  min-height: 44px;
+}
+
+.webhook-create-feedback .error-notice,
+.webhook-create-feedback .token-reveal {
+  margin: 0;
+}
+
 .project-danger-zone {
   border-bottom: 0;
 }

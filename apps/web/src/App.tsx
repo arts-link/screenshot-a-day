@@ -1986,6 +1986,10 @@ function ProjectControls({
   const [policyNotice, setPolicyNotice] = useState<string>();
   const [savingPolicy, setSavingPolicy] = useState(false);
   const policySaveLock = useRef(false);
+  const [webhookError, setWebhookError] = useState<unknown>();
+  const [createdWebhookSecret, setCreatedWebhookSecret] = useState<string>();
+  const [creatingWebhook, setCreatingWebhook] = useState(false);
+  const webhookCreateLock = useRef(false);
   const [scheduleExpression, setScheduleExpression] = useState(project.scheduleExpression);
   const [savedScheduleExpression, setSavedScheduleExpression] = useState(
     project.scheduleExpression,
@@ -2034,18 +2038,26 @@ function ProjectControls({
   };
   const addWebhook = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    if (webhookCreateLock.current) return;
+    webhookCreateLock.current = true;
+    setCreatingWebhook(true);
+    setWebhookError(undefined);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     try {
       const result = await api.createWebhook(project.id, {
         url: String(data.get("url")),
         threshold: Number(data.get("threshold")),
         events: ["capture.changed", "capture.failed"],
       });
-      setNotice(`Webhook created. Copy its signing secret now: ${result.secret}`);
+      setCreatedWebhookSecret(result.secret);
+      form.reset();
       await hooks.refetch();
-      event.currentTarget.reset();
     } catch (caught) {
-      setError(caught);
+      setWebhookError(caught);
+    } finally {
+      webhookCreateLock.current = false;
+      setCreatingWebhook(false);
     }
   };
   const replaceCredentials = async (event: FormEvent<HTMLFormElement>) => {
@@ -2186,7 +2198,7 @@ function ProjectControls({
         </div>
         <div className="control-columns">
           <div>
-            <form onSubmit={addWebhook}>
+            <form className="webhook-create-form" onSubmit={addWebhook}>
               <h3>Change webhook</h3>
               <Field label="HTTPS endpoint">
                 <input name="url" type="url" required placeholder="https://example.com/hooks/sad" />
@@ -2201,9 +2213,51 @@ function ProjectControls({
                   defaultValue="0"
                 />
               </Field>
-              <Button type="submit" variant="secondary">
-                Add signed webhook
-              </Button>
+              <div className="webhook-create-actions">
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  disabled={creatingWebhook}
+                  aria-busy={creatingWebhook}
+                >
+                  {creatingWebhook && <Spinner />}
+                  {creatingWebhook ? "Adding…" : "Add signed webhook"}
+                </Button>
+                <div className="webhook-create-feedback" aria-live="polite">
+                  {webhookError ? <ErrorNotice error={webhookError} /> : null}
+                  {createdWebhookSecret ? (
+                    <div
+                      className="token-reveal webhook-create-secret-reveal"
+                      role="status"
+                      aria-live="polite"
+                    >
+                      <div className="token-reveal-head">
+                        <div>
+                          <strong>Webhook created</strong>
+                          <span>Copy this signing secret now. It cannot be shown again.</span>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setCreatedWebhookSecret(undefined)}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                      <CopyableValue
+                        key={createdWebhookSecret}
+                        value={createdWebhookSecret}
+                        label="New webhook signing secret"
+                        copyLabel="Copy secret"
+                        manualLabel="Select secret"
+                        copiedMessage="Signing secret copied."
+                        manualMessage="Clipboard access is unavailable. The complete signing secret is selected; press Command+C or Ctrl+C to copy it manually."
+                      />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
             </form>
             <div className="hook-list">
               {hooks.data?.map((hook) => (
