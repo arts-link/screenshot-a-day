@@ -329,6 +329,95 @@ try {
   ]);
   await page.getByRole("button", { name: "Queued…" }).waitFor();
 
+  const webhookCreateEndpoint = `**/api/v1/projects/${indexable.id}/webhooks`;
+  const webhookCreateForm = page.locator(".webhook-create-form");
+  const webhookUrl = webhookCreateForm.getByLabel("HTTPS endpoint");
+  const webhookThreshold = webhookCreateForm.getByLabel("Change threshold (%)");
+  const addWebhook = webhookCreateForm.getByRole("button", { name: "Add signed webhook" });
+  const createdSecretValue = "e2e-created-webhook-signing-secret";
+  await page.route(webhookCreateEndpoint, async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: "e2e-created-webhook",
+        url: "https://hooks.example.com/created",
+        threshold: 1.25,
+        events: ["capture.changed", "capture.failed"],
+        enabled: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        secret: createdSecretValue,
+      }),
+    });
+  });
+  await webhookUrl.fill("https://hooks.example.com/created");
+  await webhookThreshold.fill("1.25");
+  await addWebhook.click();
+  const addingWebhook = webhookCreateForm.getByRole("button", { name: "Adding…" });
+  await addingWebhook.waitFor();
+  assert.equal(await addingWebhook.isDisabled(), true);
+  const createdSecret = webhookCreateForm.getByLabel("New webhook signing secret");
+  await createdSecret.waitFor();
+  assert.equal(await createdSecret.inputValue(), createdSecretValue);
+  await webhookCreateForm
+    .getByText("Copy this signing secret now. It cannot be shown again.", { exact: true })
+    .waitFor();
+  await addWebhook.waitFor();
+  assert.equal(await webhookUrl.inputValue(), "");
+  assert.equal(await webhookThreshold.inputValue(), "0");
+  assert.equal(await page.locator(".error-notice").count(), 0);
+  await webhookCreateForm.getByRole("button", { name: "Dismiss" }).click();
+  assert.equal(await createdSecret.count(), 0);
+  await page.unroute(webhookCreateEndpoint);
+
+  await webhookUrl.fill("https://127.0.0.1/rejected");
+  await webhookThreshold.fill("7.5");
+  await addWebhook.scrollIntoViewIfNeeded();
+  const webhookScrollPosition = await page.evaluate(() => globalThis.scrollY);
+  await page.route(webhookCreateEndpoint, async (route) => {
+    if (route.request().method() === "POST")
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Webhook endpoint is not allowed" }),
+      });
+    return route.continue();
+  });
+  await addWebhook.click();
+  const webhookCreateError = webhookCreateForm.locator(".webhook-create-feedback .error-notice");
+  await webhookCreateError.waitFor();
+  assert.match(await webhookCreateError.innerText(), /Webhook endpoint is not allowed/);
+  assert.equal(await webhookUrl.inputValue(), "https://127.0.0.1/rejected");
+  assert.equal(await webhookThreshold.inputValue(), "7.5");
+  assert.equal(await page.evaluate(() => globalThis.scrollY), webhookScrollPosition);
+  assert.match(browserErrors.pop() ?? "", /status of 400/);
+  assert.deepEqual(browserErrors, []);
+  await page.unroute(webhookCreateEndpoint);
+
+  await webhookUrl.fill("https://hooks.example.com/network-failure");
+  await webhookThreshold.fill("12.5");
+  await page.route(webhookCreateEndpoint, async (route) => {
+    if (route.request().method() === "POST") return route.abort("internetdisconnected");
+    return route.continue();
+  });
+  await addWebhook.click();
+  await page.waitForFunction(() => {
+    const notice = globalThis.document.querySelector(
+      ".webhook-create-form .webhook-create-feedback .error-notice",
+    );
+    return notice && !notice.textContent?.includes("Webhook endpoint is not allowed");
+  });
+  assert.match(await webhookCreateError.innerText(), /fetch|network/i);
+  assert.equal(await webhookUrl.inputValue(), "https://hooks.example.com/network-failure");
+  assert.equal(await webhookThreshold.inputValue(), "12.5");
+  assert.equal(await page.evaluate(() => globalThis.scrollY), webhookScrollPosition);
+  assert.match(browserErrors.pop() ?? "", /ERR_INTERNET_DISCONNECTED/);
+  assert.deepEqual(browserErrors, []);
+  await page.unroute(webhookCreateEndpoint);
+
   const profileSettings = page.locator(".profile-settings").filter({ hasText: "Edit Desktop" });
   await profileSettings.getByText("Edit Desktop", { exact: true }).click();
   const readinessSelector = profileSettings.getByLabel("Readiness selector");
