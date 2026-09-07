@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hashToken } from "@sad/core";
 import sharp from "sharp";
 import { buildApp, drainBlobDeletions } from "../src/app.js";
+import { hashPassword } from "../src/auth.js";
 import type { AppConfig } from "../src/config.js";
 import { AppDatabase } from "../src/database.js";
 import { LocalBlobStore } from "../src/storage.js";
@@ -144,6 +145,169 @@ describe("control plane", () => {
       duration_ms: 1,
     });
   }
+
+  it("revokes every administrator session after password recovery", async () => {
+    const secondSessionToken = "another-administrator-session-token";
+    const user = db.getUserByEmail("admin@example.com")!;
+    const oldPassword = "the original administrator password";
+    db.raw
+      .prepare("UPDATE users SET password_hash=? WHERE id=?")
+      .run(await hashPassword(oldPassword), user.id);
+    db.createSession(user.id, hashToken(secondSessionToken), new Date(Date.now() + 60_000));
+    const recoveryToken = "administrator-recovery-token";
+    db.setSetting(
+      "admin_recovery",
+      JSON.stringify({
+        tokenHash: hashToken(recoveryToken),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+
+    const recovered = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/recover",
+      payload: { token: recoveryToken, password: "a newly recovered password" },
+    });
+    expect(recovered.statusCode, recovered.body).toBe(204);
+
+    const oldLogin = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "admin@example.com", password: oldPassword },
+    });
+    expect(oldLogin.statusCode, oldLogin.body).toBe(401);
+
+    for (const token of [sessionToken, secondSessionToken]) {
+      const me = await app.inject({
+        url: "/api/v1/auth/me",
+        headers: { cookie: `sad_session=${token}` },
+      });
+      expect(me.statusCode, me.body).toBe(401);
+    }
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { email: "admin@example.com", password: "a newly recovered password" },
+    });
+    expect(login.statusCode, login.body).toBe(200);
+
+    const reused = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/recover",
+      payload: { token: recoveryToken, password: "another recovered password" },
+    });
+    expect(reused.statusCode, reused.body).toBe(401);
+  });
+
+  it("leaves the password, sessions, and recovery setting unchanged when recovery is expired", async () => {
+    const secondSessionToken = "expired-recovery-session-token";
+    const user = db.getUserByEmail("admin@example.com")!;
+    db.createSession(user.id, hashToken(secondSessionToken), new Date(Date.now() + 60_000));
+    const recoveryValue = JSON.stringify({
+      tokenHash: hashToken("expired-administrator-recovery-token"),
+      expiresAt: new Date(Date.now() - 1).toISOString(),
+    });
+    db.setSetting("admin_recovery", recoveryValue);
+    const passwordHash = user.password_hash;
+
+    const recovered = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/recover",
+      payload: {
+        token: "expired-administrator-recovery-token",
+        password: "a newly recovered password",
+      },
+    });
+    expect(recovered.statusCode, recovered.body).toBe(401);
+    expect(db.getSetting("admin_recovery")).toBe(recoveryValue);
+    expect(db.getUserByEmail("admin@example.com")?.password_hash).toBe(passwordHash);
+
+    for (const token of [sessionToken, secondSessionToken]) {
+      const me = await app.inject({
+        url: "/api/v1/auth/me",
+        headers: { cookie: `sad_session=${token}` },
+      });
+      expect(me.statusCode, me.body).toBe(200);
+    }
+  });
+
+  it("allows exactly one concurrent request to consume a recovery token", async () => {
+    const recoveryToken = "concurrent-administrator-recovery-token";
+    db.setSetting(
+      "admin_recovery",
+      JSON.stringify({
+        tokenHash: hashToken(recoveryToken),
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      }),
+    );
+    const passwords = ["first concurrent password", "second concurrent password"];
+    const responses = await Promise.all(
+      passwords.map((password) =>
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/recover",
+          payload: { token: recoveryToken, password },
+        }),
+      ),
+    );
+
+    expect(
+      responses.map((response) => response.statusCode).sort((first, second) => first - second),
+    ).toEqual([204, 401]);
+    expect(db.getSetting("admin_recovery")).toBeUndefined();
+    const logins = await Promise.all(
+      passwords.map((password) =>
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/login",
+          payload: { email: "admin@example.com", password },
+        }),
+      ),
+    );
+    expect(
+      logins.map((response) => response.statusCode).sort((first, second) => first - second),
+    ).toEqual([200, 401]);
+  });
+
+  it("rolls back token, password, and sessions when the recovery transaction fails", async () => {
+    const secondSessionToken = "rollback-recovery-session-token";
+    const user = db.getUserByEmail("admin@example.com")!;
+    db.createSession(user.id, hashToken(secondSessionToken), new Date(Date.now() + 60_000));
+    const recoveryValue = JSON.stringify({
+      tokenHash: hashToken("rollback-administrator-recovery-token"),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    db.setSetting("admin_recovery", recoveryValue);
+    const passwordHash = user.password_hash;
+    db.raw.exec(`
+      CREATE TRIGGER fail_recovery_session_delete
+      BEFORE DELETE ON sessions
+      BEGIN
+        SELECT RAISE(ABORT, 'forced recovery failure');
+      END;
+    `);
+
+    const recovered = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/recover",
+      payload: {
+        token: "rollback-administrator-recovery-token",
+        password: "a newly recovered password",
+      },
+    });
+    expect(recovered.statusCode, recovered.body).toBe(500);
+    expect(db.getSetting("admin_recovery")).toBe(recoveryValue);
+    expect(db.getUserByEmail("admin@example.com")?.password_hash).toBe(passwordHash);
+
+    for (const token of [sessionToken, secondSessionToken]) {
+      const me = await app.inject({
+        url: "/api/v1/auth/me",
+        headers: { cookie: `sad_session=${token}` },
+      });
+      expect(me.statusCode, me.body).toBe(200);
+    }
+  });
 
   it("reports health and exact version information", async () => {
     const health = await app.inject({ url: "/health/ready" });
