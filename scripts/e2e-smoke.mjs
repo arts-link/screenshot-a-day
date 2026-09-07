@@ -204,6 +204,13 @@ try {
     },
   });
   seedPublicationTarget(indexable.id);
+  db.createWebhook(
+    indexable.id,
+    "https://hooks.example.com/screenshot-a-day",
+    "unused-e2e-encrypted-secret",
+    0,
+    ["capture.changed", "capture.failed"],
+  );
   const unlisted = await createProject("E2E unlisted", "e2e-unlisted", "unlisted");
   await seedCapture(unlisted.id, unlisted.profiles[0].id, 0);
   await seedCapture(unlisted.id, unlisted.profiles[0].id, 1);
@@ -379,6 +386,82 @@ try {
   assert.match(browserErrors.pop() ?? "", /ERR_INTERNET_DISCONNECTED/);
   assert.deepEqual(browserErrors, []);
   await page.unroute(profileEndpoint);
+
+  const webhookCard = page.locator(".webhook-card").first();
+  const rotateSecret = webhookCard.getByRole("button", { name: "Rotate secret" });
+  await rotateSecret.waitFor();
+  await page.evaluate(() => {
+    globalThis.__sadCopiedValue = undefined;
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value) => {
+          globalThis.__sadCopiedValue = value;
+        },
+      },
+    });
+  });
+  await rotateSecret.click();
+  const revealedSecret = webhookCard.getByLabel("Webhook signing secret");
+  await revealedSecret.waitFor();
+  const firstSecret = await revealedSecret.inputValue();
+  await webhookCard.getByRole("button", { name: "Copy secret" }).click();
+  await webhookCard.getByText("Signing secret copied.", { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => globalThis.__sadCopiedValue), firstSecret);
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("Clipboard permission denied");
+        },
+      },
+    });
+  });
+  await rotateSecret.click();
+  await page.waitForFunction((previous) => {
+    const input = globalThis.document.querySelector(".webhook-secret-reveal input");
+    return input instanceof globalThis.HTMLInputElement && input.value !== previous;
+  }, firstSecret);
+  const secondSecret = await revealedSecret.inputValue();
+  await webhookCard.getByRole("button", { name: "Copy secret" }).click();
+  await webhookCard.getByRole("button", { name: "Select secret" }).waitFor();
+  await webhookCard.getByText(/complete signing secret is selected/i).waitFor();
+  assert.deepEqual(
+    await revealedSecret.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: secondSecret.length, length: secondSecret.length },
+  );
+
+  await page.evaluate(() => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await rotateSecret.click();
+  await page.waitForFunction((previous) => {
+    const input = globalThis.document.querySelector(".webhook-secret-reveal input");
+    return input instanceof globalThis.HTMLInputElement && input.value !== previous;
+  }, secondSecret);
+  const thirdSecret = await revealedSecret.inputValue();
+  await webhookCard.getByRole("button", { name: "Copy secret" }).click();
+  await webhookCard.getByRole("button", { name: "Select secret" }).waitFor();
+  assert.deepEqual(
+    await revealedSecret.evaluate((input) => ({
+      start: input.selectionStart,
+      end: input.selectionEnd,
+      length: input.value.length,
+    })),
+    { start: 0, end: thirdSecret.length, length: thirdSecret.length },
+  );
+  await webhookCard.getByRole("button", { name: "Dismiss" }).click();
+  assert.equal(await webhookCard.getByLabel("Webhook signing secret").count(), 0);
+  assert.deepEqual(browserErrors, []);
 
   assert.match(
     await page.getByRole("status").filter({ hasText: "Automatic scheduled captures" }).innerText(),
