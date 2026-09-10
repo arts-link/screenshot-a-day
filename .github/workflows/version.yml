@@ -13,7 +13,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: 24, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1
+      - uses: changesets/action@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v1
         with:
           version: pnpm version-packages
           title: "chore: version packages"
