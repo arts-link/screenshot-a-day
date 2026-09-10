@@ -14,7 +14,7 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm --filter @sad/contracts build && pnpm --filter @sad/core build && pnpm --filter @sad/worker build && pnpm deploy --legacy --filter @sad/worker --prod /out
 
-FROM mcr.microsoft.com/playwright:v1.62.1-noble
+FROM mcr.microsoft.com/playwright:v1.63.0-noble
 ARG SAD_VERSION=0.1.1
 ARG SAD_COMMIT=unknown
 LABEL org.opencontainers.image.title="Screenshot-a-Day Worker" \
