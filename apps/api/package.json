@@ -19,7 +19,7 @@
     "@fastify/swagger": "^9.6.1",
     "@fastify/swagger-ui": "^6.1.1",
     "@modelcontextprotocol/fastify": "^2.0.0",
-    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/node": "^2.1.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "@sad/contracts": "workspace:*",
     "@sad/core": "workspace:*",
